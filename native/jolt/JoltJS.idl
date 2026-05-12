@@ -2055,6 +2055,22 @@ interface StateRecorderImpl {
 
 StateRecorderImpl implements StateRecorder;
 
+interface JoltPhysicsScene {
+	void JoltPhysicsScene();
+	static JoltPhysicsScene sFromPhysicsSystem([Const, Ref] PhysicsSystem inSystem);
+	static JoltPhysicsScene sRestoreFromBinaryState([Ref] StateRecorder inStream);
+	boolean IsValid();
+	boolean HasError();
+	[Const, Ref] JPHString GetError();
+	unsigned long GetNumBodies();
+	unsigned long GetNumSoftBodies();
+	unsigned long GetNumConstraints();
+	void FromPhysicsSystem([Const, Ref] PhysicsSystem inSystem);
+	boolean FixInvalidScales();
+	void SaveBinaryState([Ref] StateRecorder inStream, boolean inSaveShapes, boolean inSaveGroupFilter);
+	boolean CreateBodies([Ref] PhysicsSystem inSystem, EActivation inActivationMode, boolean inPreserveBodyIDs);
+};
+
 interface BodyLockInterface {
 	Body TryGetBody([Const, Ref] BodyID inBodyID);
 };

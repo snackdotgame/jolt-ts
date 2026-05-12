@@ -8,9 +8,9 @@ Reference checkouts used for the initial API review:
 - `references/JoltPhysics.js` at `ba5cc91`
 - `references/rapier.js` at `0fd32c1`
 
-The package now owns its raw WASM build instead of depending on the published
-`jolt-physics` npm package. The forked binding layer lives in `native/jolt` and
-fetches Jolt C++ directly during `pnpm run build:native`.
+The package owns its raw WASM build instead of depending on the published
+`jolt-physics` npm package. The vendored binding layer lives in `native/jolt`
+and fetches Jolt C++ directly during `pnpm run build:native`.
 
 ## WASM Builds
 
@@ -78,5 +78,40 @@ is still explicit:
 ```ts
 const world = await World.create({ deterministic: "cross-platform" });
 ```
+
+Initial network synchronization uses two binary payloads:
+
+```ts
+const scene = serverWorld.takeSceneSnapshot();
+const state = serverWorld.saveState();
+
+const clientWorld = await World.create({ deterministic: "cross-platform" });
+clientWorld.restoreSceneSnapshot(scene);
+clientWorld.restoreState(state);
+```
+
+The state APIs keep Jolt's native parameter order after the recorder argument:
+
+```ts
+using recorder = serverWorld.createStateRecorder();
+serverWorld.saveState(recorder, "all", stateFilter);
+clientWorld.restoreState(recorder, stateFilter);
+```
+
+For the common byte-oriented path, omit the recorder and `saveState()` returns a
+`Uint8Array`:
+
+```ts
+const state = serverWorld.saveState("all", stateFilter);
+clientWorld.restoreState(state, stateFilter);
+```
+
+The scene snapshot captures the compatible world layout, including bodies,
+configuration, shapes, constraints, and preserved Jolt body IDs. `saveState()`
+is the native Jolt `SaveState` payload for positions, velocities, active state,
+contacts, and other simulation-owned state. For rollback, keep a ring buffer of
+`saveState()` bytes and replay inputs after `restoreState()`. When topology or
+body configuration changes, send a new scene snapshot before applying later
+state bytes.
 
 See [docs/api-directions.md](docs/api-directions.md) for the proposed API shape.

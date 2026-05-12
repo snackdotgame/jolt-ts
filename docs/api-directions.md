@@ -271,16 +271,33 @@ debug.colors;    // Float32Array
 
 For deep use, expose the raw debug renderer if the debug Jolt build is loaded.
 
-### 10. Snapshots
+### 10. Scene snapshots and Jolt state
 
-Wrap `StateRecorder` into byte snapshots:
+Keep topology/configuration separate from transient simulation state:
 
 ```ts
-const bytes = world.takeSnapshot();
-world.restoreSnapshot(bytes);
+const scene = world.takeSceneSnapshot();
+const state = world.saveState();
+
+replica.restoreSceneSnapshot(scene);
+replica.restoreState(state);
 ```
 
-This likely needs custom JS stream wrappers around `StateRecorderJS`.
+`takeSceneSnapshot()` uses Jolt `PhysicsScene` binary serialization plus preserved
+body IDs so later `restoreState()` calls are compatible. `saveState()` is a thin
+byte wrapper around native Jolt `PhysicsSystem::SaveState`, suitable for rollback
+ring buffers and frame-to-frame network state. The hot rollback path should use
+`saveState()` / `restoreState()` directly; only send a new scene snapshot when
+body topology, constraints, shapes, or body configuration changes.
+
+For full-power use, preserve the native parameter shape and pass an explicit
+recorder plus optional `EStateRecorderState`/filter equivalents:
+
+```ts
+using recorder = world.createStateRecorder();
+world.saveState(recorder, "all", filter);
+replica.restoreState(recorder, filter);
+```
 
 ## Full-power escape hatches
 

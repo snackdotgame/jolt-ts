@@ -16,6 +16,7 @@ import {
   ShapeResource,
   type ShapeInput
 } from "./shape.js";
+import { createStateRecorder, type NativeByteRecorder } from "./snapshot.js";
 import type { NativeScope } from "./native.js";
 import type {
   ActivationMode,
@@ -52,6 +53,19 @@ export interface WorldCreateOptions {
   readonly maxContactConstraints?: number;
   readonly maxWorkerThreads?: number;
   readonly deterministic?: boolean | "cross-platform";
+}
+
+export type StateRecorderState = "none" | "global" | "bodies" | "contacts" | "constraints" | "all" | number;
+export type StateRecorderLike = NativeByteRecorder | Record<string, any>;
+export type StateRecorderFilter = Record<string, any>;
+
+export interface SceneSnapshotOptions {
+  readonly saveShapes?: boolean;
+  readonly saveGroupFilter?: boolean;
+}
+
+export interface RestoreSceneSnapshotOptions {
+  readonly activate?: ActivationMode;
 }
 
 export class BodyDesc {
@@ -330,6 +344,128 @@ export class World {
     this.#physicsSystem.SetPhysicsSettings(settings);
   }
 
+  createStateRecorder(input?: Uint8Array): NativeByteRecorder {
+    this.assertAlive();
+    return createStateRecorder(this.runtime, input);
+  }
+
+  saveState(): Uint8Array;
+  saveState(inState: StateRecorderState, inFilter?: StateRecorderFilter): Uint8Array;
+  saveState(inStream: StateRecorderLike, inState?: StateRecorderState, inFilter?: StateRecorderFilter): void;
+  saveState(
+    inStreamOrState?: StateRecorderLike | StateRecorderState,
+    inStateOrFilter?: StateRecorderState | StateRecorderFilter,
+    inFilter?: StateRecorderFilter
+  ): Uint8Array | void {
+    this.assertAlive();
+
+    if (isStateRecorderLike(inStreamOrState)) {
+      const state = isStateRecorderState(inStateOrFilter) ? inStateOrFilter : "all";
+      const filter = isStateRecorderState(inStateOrFilter) ? inFilter : inStateOrFilter;
+      this.#saveStateToRecorder(inStreamOrState, state, filter);
+      return;
+    }
+
+    const recorder = createStateRecorder(this.runtime);
+    try {
+      this.#saveStateToRecorder(recorder, inStreamOrState ?? "all", inStateOrFilter as StateRecorderFilter | undefined);
+      return recorder.bytes();
+    } finally {
+      recorder.dispose();
+    }
+  }
+
+  restoreState(inStream: Uint8Array | StateRecorderLike, inFilter?: StateRecorderFilter): boolean {
+    this.assertAlive();
+
+    if (!isByteArray(inStream)) {
+      return this.#restoreStateFromRecorder(inStream, inFilter);
+    }
+
+    const recorder = createStateRecorder(this.runtime, inStream);
+
+    try {
+      return this.#restoreStateFromRecorder(recorder, inFilter);
+    } finally {
+      recorder.dispose();
+    }
+  }
+
+  #saveStateToRecorder(
+    inStream: StateRecorderLike,
+    inState: StateRecorderState = "all",
+    inFilter?: StateRecorderFilter
+  ): void {
+    const raw = this.runtime.raw as RawJolt;
+    const rawStream = rawStateRecorder(inStream);
+    const state = toStateRecorderState(raw, inState);
+
+    if (inFilter) {
+      this.#physicsSystem.SaveState(rawStream, state, inFilter);
+    } else {
+      this.#physicsSystem.SaveState(rawStream, state);
+    }
+  }
+
+  #restoreStateFromRecorder(inStream: StateRecorderLike, inFilter?: StateRecorderFilter): boolean {
+    const rawStream = rawStateRecorder(inStream);
+    return inFilter
+      ? this.#physicsSystem.RestoreState(rawStream, inFilter)
+      : this.#physicsSystem.RestoreState(rawStream);
+  }
+
+  takeSceneSnapshot(options: SceneSnapshotOptions = {}): Uint8Array {
+    this.assertAlive();
+    const raw = this.runtime.raw as RawJolt;
+    const scene = raw.JoltPhysicsScene.prototype.sFromPhysicsSystem(this.#physicsSystem);
+    const recorder = createStateRecorder(this.runtime);
+
+    try {
+      if (!scene.IsValid()) {
+        const message = scene.HasError() ? scene.GetError().c_str() : "unknown scene serialization error";
+        throw new Error(`Failed to snapshot Jolt physics scene: ${message}`);
+      }
+
+      scene.SaveBinaryState(recorder.raw, options.saveShapes ?? true, options.saveGroupFilter ?? true);
+      return recorder.bytes();
+    } finally {
+      recorder.dispose();
+      this.runtime.destroyRaw(scene);
+    }
+  }
+
+  restoreSceneSnapshot(snapshot: Uint8Array, options: RestoreSceneSnapshotOptions = {}): void {
+    this.assertAlive();
+    const raw = this.runtime.raw as RawJolt;
+    const recorder = createStateRecorder(this.runtime, snapshot);
+    const scene = raw.JoltPhysicsScene.prototype.sRestoreFromBinaryState(recorder.raw);
+
+    try {
+      if (!scene.IsValid()) {
+        const message = scene.HasError() ? scene.GetError().c_str() : "unknown scene restore error";
+        throw new Error(`Failed to restore Jolt physics scene: ${message}`);
+      }
+
+      for (const body of [...this.#bodies.values()]) {
+        this.removeBody(body);
+      }
+
+      const created = scene.CreateBodies(
+        this.#physicsSystem,
+        toActivation(raw, options.activate),
+        true
+      );
+      if (!created) {
+        throw new Error("Failed to create Jolt bodies from scene snapshot.");
+      }
+
+      this.#syncBodiesFromPhysicsSystem();
+    } finally {
+      this.runtime.destroyRaw(scene);
+      recorder.dispose();
+    }
+  }
+
   createBody(options: CreateBodyOptions | BodyDesc): Body {
     this.assertAlive();
 
@@ -408,6 +544,29 @@ export class World {
   assertAlive(): void {
     if (this.#disposed) {
       throw new Error("World is already disposed.");
+    }
+  }
+
+  #syncBodiesFromPhysicsSystem(): void {
+    const raw = this.runtime.raw as RawJolt;
+    const bodyIds = new raw.BodyIDVector();
+
+    try {
+      this.#bodies.clear();
+      this.#physicsSystem.GetBodies(bodyIds);
+      const lockInterface = this.#physicsSystem.GetBodyLockInterfaceNoLock();
+
+      for (let index = 0; index < bodyIds.size(); index += 1) {
+        const rawBody = lockInterface.TryGetBody(bodyIds.at(index));
+        if (!rawBody) {
+          continue;
+        }
+
+        const body = Body.fromRaw(this, rawBody, rawBody.GetUserData());
+        this.#bodies.set(body.id, body);
+      }
+    } finally {
+      this.runtime.destroyRaw(bodyIds);
     }
   }
 
@@ -793,6 +952,47 @@ function toMotionQuality(raw: RawJolt, quality: MotionQuality): number {
 
 function toActivation(raw: RawJolt, mode: ActivationMode | undefined): number {
   return mode === false || mode === "dontActivate" ? raw.EActivation_DontActivate : raw.EActivation_Activate;
+}
+
+function toStateRecorderState(raw: RawJolt, state: StateRecorderState): number {
+  if (typeof state === "number") {
+    return state;
+  }
+
+  switch (state) {
+    case "none":
+      return raw.EStateRecorderState_None;
+    case "all":
+      return raw.EStateRecorderState_All;
+    case "global":
+      return raw.EStateRecorderState_Global;
+    case "bodies":
+      return raw.EStateRecorderState_Bodies;
+    case "contacts":
+      return raw.EStateRecorderState_Contacts;
+    case "constraints":
+      return raw.EStateRecorderState_Constraints;
+  }
+}
+
+function isByteArray(value: unknown): value is Uint8Array {
+  return value instanceof Uint8Array;
+}
+
+function isStateRecorderState(value: unknown): value is StateRecorderState {
+  return typeof value === "string" || typeof value === "number";
+}
+
+function isStateRecorderLike(value: unknown): value is StateRecorderLike {
+  return typeof value === "object" && value !== null && !isByteArray(value);
+}
+
+function isNativeByteRecorder(value: StateRecorderLike): value is NativeByteRecorder {
+  return "raw" in value && typeof value.bytes === "function";
+}
+
+function rawStateRecorder(inStream: StateRecorderLike): Record<string, any> {
+  return isNativeByteRecorder(inStream) ? inStream.raw : inStream;
 }
 
 function bodyRawId(body: Body): RawBodyID {

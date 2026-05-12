@@ -1,8 +1,8 @@
 # jolt-ts native build
 
-This directory is a small fork of the JoltPhysics.js binding/build layer. It
-generates the raw Emscripten modules that `src/raw.ts` loads at runtime, so the
-package does not depend on the published `jolt-physics` npm package.
+This directory vendors the Emscripten binding/build layer that `jolt-ts`
+customizes for its own raw Jolt WASM modules. The package does not depend on the
+published `jolt-physics` npm package.
 
 The build fetches Jolt C++ directly from `jrouwe/JoltPhysics` at `v5.5.0` and
 sets `CROSS_PLATFORM_DETERMINISTIC=ON` by default. Runtime deterministic

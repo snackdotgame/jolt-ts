@@ -9,6 +9,7 @@
 #include "Jolt/Math/Quat.h"
 #include "Jolt/Geometry/OrientedBox.h"
 #include "Jolt/Physics/PhysicsSystem.h"
+#include "Jolt/Physics/PhysicsScene.h"
 #include "Jolt/Physics/StateRecorderImpl.h"
 #include "Jolt/Physics/Collision/RayCast.h"
 #include "Jolt/Physics/Collision/CastResult.h"
@@ -49,6 +50,7 @@
 #include "Jolt/Physics/Constraints/GearConstraint.h"
 #include "Jolt/Physics/Constraints/RackAndPinionConstraint.h"
 #include "Jolt/Physics/Body/BodyInterface.h"
+#include "Jolt/Physics/Body/BodyLockMulti.h"
 #include "Jolt/Physics/Body/BodyCreationSettings.h"
 #include "Jolt/Physics/Ragdoll/Ragdoll.h"
 #include "Jolt/Physics/SoftBody/SoftBodyCreationSettings.h"
@@ -165,6 +167,15 @@ using CompoundShapeSubShape = CompoundShape::SubShape;
 using BodyInterface_AddState = void;
 using CharacterVirtualContact = CharacterVirtual::Contact;
 using ArrayCharacterVirtualContact = Array<CharacterVirtualContact>;
+
+static constexpr uint32 JoltPhysicsSceneMagic = 0x3153544a; // "JTS1" in little-endian streams.
+static constexpr uint32 JoltPhysicsSceneVersion = 1;
+
+static bool JoltStateRecorderReadFailed(StateRecorder &inStream)
+{
+	StreamIn &stream_in = inStream;
+	return stream_in.IsEOF() || stream_in.IsFailed();
+}
 
 // Alias for EBodyType values to avoid clashes
 constexpr EBodyType EBodyType_RigidBody = EBodyType::RigidBody;
@@ -522,6 +533,250 @@ private:
 #ifdef JPH_ENABLE_ASSERTS
 	inline static AssertFailedHandler *sAssertFailedHandler = nullptr;
 #endif
+};
+
+/// JavaScript-facing wrapper for PhysicsScene binary snapshots. Jolt's native PhysicsScene
+/// can serialize topology efficiently, but it recreates bodies with fresh IDs. This wrapper
+/// stores body IDs next to the scene so SaveState snapshots remain compatible after restore.
+class JoltPhysicsScene
+{
+public:
+							JoltPhysicsScene()
+	{
+		mScene = new PhysicsScene();
+	}
+
+	static JoltPhysicsScene *sFromPhysicsSystem(const PhysicsSystem &inSystem)
+	{
+		JoltPhysicsScene *scene = new JoltPhysicsScene();
+		scene->FromPhysicsSystem(inSystem);
+		return scene;
+	}
+
+	static JoltPhysicsScene *sRestoreFromBinaryState(StateRecorder &inStream)
+	{
+		JoltPhysicsScene *scene = new JoltPhysicsScene();
+		scene->RestoreFromBinaryState(inStream);
+		return scene;
+	}
+
+	bool					IsValid() const
+	{
+		return mScene != nullptr && mError.empty();
+	}
+
+	bool					HasError() const
+	{
+		return !mError.empty();
+	}
+
+	const String &			GetError() const
+	{
+		return mError;
+	}
+
+	uint					GetNumBodies() const
+	{
+		return mScene != nullptr? (uint)mScene->GetNumBodies() : 0;
+	}
+
+	uint					GetNumSoftBodies() const
+	{
+		return mScene != nullptr? (uint)mScene->GetNumSoftBodies() : 0;
+	}
+
+	uint					GetNumConstraints() const
+	{
+		return mScene != nullptr? (uint)mScene->GetNumConstraints() : 0;
+	}
+
+	void					FromPhysicsSystem(const PhysicsSystem &inSystem)
+	{
+		mError.clear();
+		mScene = new PhysicsScene();
+		mBodyIDs.clear();
+		mSoftBodyIDs.clear();
+
+		using BodyIDToIdxMap = UnorderedMap<BodyID, uint32>;
+		BodyIDToIdxMap body_id_to_idx;
+		body_id_to_idx[BodyID()] = PhysicsScene::cFixedToWorld;
+
+		BodyIDVector body_ids;
+		inSystem.GetBodies(body_ids);
+
+		const BodyLockInterface &body_lock_interface = inSystem.GetBodyLockInterface();
+		for (const BodyID &id : body_ids)
+		{
+			BodyLockRead lock(body_lock_interface, id);
+			if (!lock.Succeeded())
+				continue;
+
+			const Body &body = lock.GetBody();
+			if (body.IsRigidBody())
+			{
+				body_id_to_idx[id] = (uint32)mBodyIDs.size();
+				mScene->AddBody(body.GetBodyCreationSettings());
+				mBodyIDs.push_back(id);
+			}
+			else
+			{
+				body_id_to_idx[id] = (uint32)(mBodyIDs.size() + mSoftBodyIDs.size());
+				mScene->AddSoftBody(body.GetSoftBodyCreationSettings());
+				mSoftBodyIDs.push_back(id);
+			}
+		}
+
+		Constraints constraints = inSystem.GetConstraints();
+		for (const Constraint *constraint : constraints)
+			if (constraint->GetType() == EConstraintType::TwoBodyConstraint)
+			{
+				const TwoBodyConstraint *two_body_constraint = static_cast<const TwoBodyConstraint *>(constraint);
+				BodyIDToIdxMap::const_iterator body1 = body_id_to_idx.find(two_body_constraint->GetBody1()->GetID());
+				BodyIDToIdxMap::const_iterator body2 = body_id_to_idx.find(two_body_constraint->GetBody2()->GetID());
+
+				if (body1 == body_id_to_idx.end() || body2 == body_id_to_idx.end())
+				{
+					mError = "Failed to serialize constraint because a body was missing from the scene";
+					return;
+				}
+
+				Ref<ConstraintSettings> settings = constraint->GetConstraintSettings();
+				mScene->AddConstraint(StaticCast<TwoBodyConstraintSettings>(settings), body1->second, body2->second);
+			}
+	}
+
+	bool					FixInvalidScales()
+	{
+		return mScene != nullptr && mScene->FixInvalidScales();
+	}
+
+	void					SaveBinaryState(StateRecorder &inStream, bool inSaveShapes, bool inSaveGroupFilter) const
+	{
+		inStream.Write(JoltPhysicsSceneMagic);
+		inStream.Write(JoltPhysicsSceneVersion);
+
+		uint32 num_body_ids = (uint32)mBodyIDs.size();
+		inStream.Write(num_body_ids);
+		for (const BodyID &id : mBodyIDs)
+			inStream.Write(id);
+
+		uint32 num_soft_body_ids = (uint32)mSoftBodyIDs.size();
+		inStream.Write(num_soft_body_ids);
+		for (const BodyID &id : mSoftBodyIDs)
+			inStream.Write(id);
+
+		mScene->SaveBinaryState(inStream, inSaveShapes, inSaveGroupFilter);
+	}
+
+	bool					CreateBodies(PhysicsSystem &inSystem, EActivation inActivationMode, bool inPreserveBodyIDs) const
+	{
+		if (mScene == nullptr)
+			return false;
+
+		if (!inPreserveBodyIDs)
+			return mScene->CreateBodies(&inSystem);
+
+		const Array<BodyCreationSettings> &bodies = mScene->GetBodies();
+		const Array<SoftBodyCreationSettings> &soft_bodies = mScene->GetSoftBodies();
+		if (mBodyIDs.size() != bodies.size() || mSoftBodyIDs.size() != soft_bodies.size())
+			return false;
+
+		BodyInterface &body_interface = inSystem.GetBodyInterface();
+		BodyIDVector created_body_ids;
+		created_body_ids.reserve(bodies.size() + soft_bodies.size());
+
+		for (uint index = 0; index < bodies.size(); ++index)
+		{
+			const Body *body = body_interface.CreateBodyWithID(mBodyIDs[index], bodies[index]);
+			if (body == nullptr)
+				return false;
+			created_body_ids.push_back(body->GetID());
+		}
+
+		for (uint index = 0; index < soft_bodies.size(); ++index)
+		{
+			const Body *body = body_interface.CreateSoftBodyWithID(mSoftBodyIDs[index], soft_bodies[index]);
+			if (body == nullptr)
+				return false;
+			created_body_ids.push_back(body->GetID());
+		}
+
+		BodyIDVector add_body_ids = created_body_ids;
+		BodyInterface::AddState add_state = body_interface.AddBodiesPrepare(add_body_ids.data(), (int)add_body_ids.size());
+		body_interface.AddBodiesFinalize(add_body_ids.data(), (int)add_body_ids.size(), add_state, inActivationMode);
+
+		const Array<PhysicsScene::ConnectedConstraint> &constraints = mScene->GetConstraints();
+		for (const PhysicsScene::ConnectedConstraint &connected_constraint : constraints)
+		{
+			BodyID body1_id = connected_constraint.mBody1 == PhysicsScene::cFixedToWorld? BodyID() : created_body_ids[connected_constraint.mBody1];
+			BodyID body2_id = connected_constraint.mBody2 == PhysicsScene::cFixedToWorld? BodyID() : created_body_ids[connected_constraint.mBody2];
+			Constraint *constraint = body_interface.CreateConstraint(connected_constraint.mSettings, body1_id, body2_id);
+			inSystem.AddConstraint(constraint);
+		}
+
+		return true;
+	}
+
+private:
+	void					RestoreFromBinaryState(StateRecorder &inStream)
+	{
+		mError.clear();
+		mBodyIDs.clear();
+		mSoftBodyIDs.clear();
+
+		uint32 magic = 0;
+		uint32 version = 0;
+		inStream.Read(magic);
+		inStream.Read(version);
+
+		if (magic != JoltPhysicsSceneMagic)
+		{
+			mScene = nullptr;
+			mError = "Invalid jolt-ts physics scene snapshot magic";
+			return;
+		}
+
+		if (version != JoltPhysicsSceneVersion)
+		{
+			mScene = nullptr;
+			mError = "Unsupported jolt-ts physics scene snapshot version";
+			return;
+		}
+
+		uint32 num_body_ids = 0;
+		inStream.Read(num_body_ids);
+		mBodyIDs.resize(num_body_ids);
+		for (BodyID &id : mBodyIDs)
+			inStream.Read(id);
+
+		uint32 num_soft_body_ids = 0;
+		inStream.Read(num_soft_body_ids);
+		mSoftBodyIDs.resize(num_soft_body_ids);
+		for (BodyID &id : mSoftBodyIDs)
+			inStream.Read(id);
+
+		if (JoltStateRecorderReadFailed(inStream))
+		{
+			mScene = nullptr;
+			mError = "Failed to read jolt-ts physics scene snapshot header";
+			return;
+		}
+
+		PhysicsScene::PhysicsSceneResult result = PhysicsScene::sRestoreFromBinaryState(inStream);
+		if (result.HasError())
+		{
+			mScene = nullptr;
+			mError = result.GetError();
+			return;
+		}
+
+		mScene = result.Get();
+	}
+
+	Ref<PhysicsScene>		mScene;
+	Array<BodyID>			mBodyIDs;
+	Array<BodyID>			mSoftBodyIDs;
+	String					mError;
 };
 
 /// Helper class to extract triangles from the shape

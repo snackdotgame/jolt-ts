@@ -19,5 +19,11 @@ export {
   BodyDesc,
   ShapeStore,
   World,
+  type RestoreSceneSnapshotOptions,
+  type SceneSnapshotOptions,
+  type StateRecorderFilter,
+  type StateRecorderLike,
+  type StateRecorderState,
   type WorldCreateOptions
 } from "./world.js";
+export { createStateRecorder, type NativeByteRecorder } from "./snapshot.js";

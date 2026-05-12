@@ -1,7 +1,7 @@
 {
   "name": "jolt-ts",
   "version": "0.0.0",
-  "description": "TypeScript-first ergonomic wrapper for JoltPhysics.js",
+  "description": "TypeScript-first ergonomic wrapper for Jolt Physics WASM",
   "type": "module",
   "packageManager": "pnpm@10.33.2",
   "main": "./dist/index.js",

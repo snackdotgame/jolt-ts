@@ -69,8 +69,8 @@ endif()
 # Turn off custom allocator
 set(DISABLE_CUSTOM_ALLOCATOR ON)
 
-# Turn off ObjectStream
-set(ENABLE_OBJECT_STREAM OFF)
+# Enable ObjectStream and binary scene serialization helpers in our vendored binding build.
+set(ENABLE_OBJECT_STREAM ON)
 
 # Use 32-bit object layers to support more bits in ObjectLayerPairFilterMask
 set(OBJECT_LAYER_BITS 32)
@@ -204,6 +204,7 @@ set(EMCC_GLUE_ARGS
   -fno-exceptions
   ${MULTI_THREADED_FLAG}
   -DJPH_OBJECT_LAYER_BITS=32
+  -DJPH_OBJECT_STREAM
   -DJPH_DISABLE_CUSTOM_ALLOCATOR
   -include ${JOLT_HEADER_FILE}
   ${MEMORY_PROFILER_FLAG}
@@ -245,7 +246,7 @@ add_custom_command(
 	OUTPUT ${JOLT_TYPING}
 	COMMAND pnpm exec webidl-dts-gen -e -d -i jolt.idl -o ${JOLT_TYPING} -n Jolt
 	DEPENDS jolt.idl
-	COMMENT "Generating JoltPhysics.js typing"
+	COMMENT "Generating Jolt WASM typing"
 	VERBATIM)
 
 add_custom_command(
@@ -255,14 +256,14 @@ add_custom_command(
 	COMMAND ${PYTHON} ${WEBIDL_BINDER_SCRIPT} jolt.idl glue
 	COMMAND ${REMOVE_THREAD_LOCAL}
 	DEPENDS ${JOLT_IDL_FILE}
-	COMMENT "Generating JoltPhysics.js bindings"
+	COMMENT "Generating Jolt WASM bindings"
 	VERBATIM)
 
 add_custom_command(
 	OUTPUT glue.o
 	COMMAND emcc glue.cpp ${EMCC_GLUE_ARGS} -o glue.o
 	DEPENDS glue.cpp ${JOLT_HEADER_FILE}
-	COMMENT "Building JoltPhysics.js bindings"
+	COMMENT "Building Jolt WASM bindings"
 	VERBATIM)
 add_custom_target(jolt-bindings ALL DEPENDS glue.js glue.o ${JOLT_TYPING})
 
@@ -273,7 +274,7 @@ if (NOT BUILD_WASM_COMPAT_ONLY)
 			OUTPUT ${OUTPUT_BASE_NAME}.js
 			COMMAND emcc glue.o $<TARGET_FILE:Jolt> ${EMCC_JS_ARGS} -o ${OUTPUT_BASE_NAME}.js
 			DEPENDS jolt-bindings ${JOLT_FRONT_MATTER_FILE} ${JOLT_TARGETS} ${JOLT_IDL_FILE} ${JOLT_HEADER_FILE}
-			COMMENT "Building JoltPhysics.js javascript"
+			COMMENT "Building Jolt WASM javascript"
 			VERBATIM)
 		add_custom_target(jolt-javascript ALL DEPENDS ${OUTPUT_BASE_NAME}.js)
 	endif()
@@ -283,7 +284,7 @@ if (NOT BUILD_WASM_COMPAT_ONLY)
 		COMMAND emcc glue.o $<TARGET_FILE:Jolt> ${EMCC_WASM_ARGS} -o ${OUTPUT_BASE_NAME}.wasm.js
 		COMMAND ${REPLACE_IMPORT} ${OUTPUT_BASE_NAME}.wasm.js
 		DEPENDS jolt-bindings ${JOLT_FRONT_MATTER_FILE} ${JOLT_TARGETS} ${JOLT_IDL_FILE} ${JOLT_HEADER_FILE}
-		COMMENT "Building JoltPhysics.js webassembly"
+		COMMENT "Building Jolt WASM webassembly"
 		VERBATIM)
 	add_custom_target(jolt-wasm ALL DEPENDS ${OUTPUT_BASE_NAME}.wasm.js ${OUTPUT_BASE_NAME}.wasm.wasm)
 endif()
@@ -293,6 +294,6 @@ add_custom_command(
 	COMMAND emcc glue.o $<TARGET_FILE:Jolt> ${EMCC_WASM_COMPAT_ARGS} -o ${OUTPUT_BASE_NAME}.wasm-compat.js
 	COMMAND ${REPLACE_IMPORT} ${OUTPUT_BASE_NAME}.wasm-compat.js
 	DEPENDS jolt-bindings ${JOLT_FRONT_MATTER_FILE} ${JOLT_TARGETS} ${JOLT_IDL_FILE} ${JOLT_HEADER_FILE}
-	COMMENT "Building JoltPhysics.js compat webassembly"
+	COMMENT "Building Jolt WASM compat webassembly"
 	VERBATIM)
 add_custom_target(jolt-wasm-compat ALL DEPENDS ${OUTPUT_BASE_NAME}.wasm-compat.js)

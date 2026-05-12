@@ -2170,6 +2170,21 @@ declare module Jolt {
         Rewind(): void;
         IsEqual(inReference: StateRecorderImpl): boolean;
     }
+    class JoltPhysicsScene {
+        constructor();
+        sFromPhysicsSystem(inSystem: PhysicsSystem): JoltPhysicsScene;
+        sRestoreFromBinaryState(inStream: StateRecorder): JoltPhysicsScene;
+        IsValid(): boolean;
+        HasError(): boolean;
+        GetError(): JPHString;
+        GetNumBodies(): number;
+        GetNumSoftBodies(): number;
+        GetNumConstraints(): number;
+        FromPhysicsSystem(inSystem: PhysicsSystem): void;
+        FixInvalidScales(): boolean;
+        SaveBinaryState(inStream: StateRecorder, inSaveShapes: boolean, inSaveGroupFilter: boolean): void;
+        CreateBodies(inSystem: PhysicsSystem, inActivationMode: EActivation, inPreserveBodyIDs: boolean): boolean;
+    }
     class BodyLockInterface {
         TryGetBody(inBodyID: BodyID): Body;
     }
@@ -4451,5 +4466,164 @@ declare module Jolt {
         sGetTotalMemory(): number;
         sGetFreeMemory(): number;
         sGetFixedToWorldBody(): Body;
+    }
+    const ECullMode_CullBackFace: number;
+    const ECullMode_CullFrontFace: number;
+    const ECullMode_Off: number;
+    type ECullMode = typeof ECullMode_CullBackFace | typeof ECullMode_CullFrontFace | typeof ECullMode_Off;
+    function _emscripten_enum_ECullMode_ECullMode_CullBackFace(): ECullMode;
+    function _emscripten_enum_ECullMode_ECullMode_CullFrontFace(): ECullMode;
+    function _emscripten_enum_ECullMode_ECullMode_Off(): ECullMode;
+    const ECastShadow_On: number;
+    const ECastShadow_Off: number;
+    type ECastShadow = typeof ECastShadow_On | typeof ECastShadow_Off;
+    function _emscripten_enum_ECastShadow_ECastShadow_On(): ECastShadow;
+    function _emscripten_enum_ECastShadow_ECastShadow_Off(): ECastShadow;
+    const EDrawMode_Solid: number;
+    const EDrawMode_Wireframe: number;
+    type EDrawMode = typeof EDrawMode_Solid | typeof EDrawMode_Wireframe;
+    function _emscripten_enum_EDrawMode_EDrawMode_Solid(): EDrawMode;
+    function _emscripten_enum_EDrawMode_EDrawMode_Wireframe(): EDrawMode;
+    const EShapeColor_InstanceColor: number;
+    const EShapeColor_ShapeTypeColor: number;
+    const EShapeColor_MotionTypeColor: number;
+    const EShapeColor_SleepColor: number;
+    const EShapeColor_IslandColor: number;
+    const EShapeColor_MaterialColor: number;
+    type EShapeColor = typeof EShapeColor_InstanceColor | typeof EShapeColor_ShapeTypeColor | typeof EShapeColor_MotionTypeColor | typeof EShapeColor_SleepColor | typeof EShapeColor_IslandColor | typeof EShapeColor_MaterialColor;
+    function _emscripten_enum_EShapeColor_EShapeColor_InstanceColor(): EShapeColor;
+    function _emscripten_enum_EShapeColor_EShapeColor_ShapeTypeColor(): EShapeColor;
+    function _emscripten_enum_EShapeColor_EShapeColor_MotionTypeColor(): EShapeColor;
+    function _emscripten_enum_EShapeColor_EShapeColor_SleepColor(): EShapeColor;
+    function _emscripten_enum_EShapeColor_EShapeColor_IslandColor(): EShapeColor;
+    function _emscripten_enum_EShapeColor_EShapeColor_MaterialColor(): EShapeColor;
+    const ESoftBodyConstraintColor_ConstraintType: number;
+    const ESoftBodyConstraintColor_ConstraintGroup: number;
+    const ESoftBodyConstraintColor_ConstraintOrder: number;
+    type ESoftBodyConstraintColor = typeof ESoftBodyConstraintColor_ConstraintType | typeof ESoftBodyConstraintColor_ConstraintGroup | typeof ESoftBodyConstraintColor_ConstraintOrder;
+    function _emscripten_enum_ESoftBodyConstraintColor_ESoftBodyConstraintColor_ConstraintType(): ESoftBodyConstraintColor;
+    function _emscripten_enum_ESoftBodyConstraintColor_ESoftBodyConstraintColor_ConstraintGroup(): ESoftBodyConstraintColor;
+    function _emscripten_enum_ESoftBodyConstraintColor_ESoftBodyConstraintColor_ConstraintOrder(): ESoftBodyConstraintColor;
+    class Color {
+        get_mU32(): number;
+        set_mU32(mU32: number): void;
+        mU32: number;
+    }
+    class BodyManagerDrawSettings {
+        constructor();
+        get_mDrawGetSupportFunction(): boolean;
+        set_mDrawGetSupportFunction(mDrawGetSupportFunction: boolean): void;
+        mDrawGetSupportFunction: boolean;
+        get_mDrawSupportDirection(): boolean;
+        set_mDrawSupportDirection(mDrawSupportDirection: boolean): void;
+        mDrawSupportDirection: boolean;
+        get_mDrawGetSupportingFace(): boolean;
+        set_mDrawGetSupportingFace(mDrawGetSupportingFace: boolean): void;
+        mDrawGetSupportingFace: boolean;
+        get_mDrawShape(): boolean;
+        set_mDrawShape(mDrawShape: boolean): void;
+        mDrawShape: boolean;
+        get_mDrawShapeWireframe(): boolean;
+        set_mDrawShapeWireframe(mDrawShapeWireframe: boolean): void;
+        mDrawShapeWireframe: boolean;
+        get_mDrawShapeColor(): EShapeColor;
+        set_mDrawShapeColor(mDrawShapeColor: EShapeColor): void;
+        mDrawShapeColor: EShapeColor;
+        get_mDrawBoundingBox(): boolean;
+        set_mDrawBoundingBox(mDrawBoundingBox: boolean): void;
+        mDrawBoundingBox: boolean;
+        get_mDrawCenterOfMassTransform(): boolean;
+        set_mDrawCenterOfMassTransform(mDrawCenterOfMassTransform: boolean): void;
+        mDrawCenterOfMassTransform: boolean;
+        get_mDrawWorldTransform(): boolean;
+        set_mDrawWorldTransform(mDrawWorldTransform: boolean): void;
+        mDrawWorldTransform: boolean;
+        get_mDrawVelocity(): boolean;
+        set_mDrawVelocity(mDrawVelocity: boolean): void;
+        mDrawVelocity: boolean;
+        get_mDrawMassAndInertia(): boolean;
+        set_mDrawMassAndInertia(mDrawMassAndInertia: boolean): void;
+        mDrawMassAndInertia: boolean;
+        get_mDrawSleepStats(): boolean;
+        set_mDrawSleepStats(mDrawSleepStats: boolean): void;
+        mDrawSleepStats: boolean;
+        get_mDrawSoftBodyVertices(): boolean;
+        set_mDrawSoftBodyVertices(mDrawSoftBodyVertices: boolean): void;
+        mDrawSoftBodyVertices: boolean;
+        get_mDrawSoftBodyVertexVelocities(): boolean;
+        set_mDrawSoftBodyVertexVelocities(mDrawSoftBodyVertexVelocities: boolean): void;
+        mDrawSoftBodyVertexVelocities: boolean;
+        get_mDrawSoftBodyEdgeConstraints(): boolean;
+        set_mDrawSoftBodyEdgeConstraints(mDrawSoftBodyEdgeConstraints: boolean): void;
+        mDrawSoftBodyEdgeConstraints: boolean;
+        get_mDrawSoftBodyBendConstraints(): boolean;
+        set_mDrawSoftBodyBendConstraints(mDrawSoftBodyBendConstraints: boolean): void;
+        mDrawSoftBodyBendConstraints: boolean;
+        get_mDrawSoftBodyVolumeConstraints(): boolean;
+        set_mDrawSoftBodyVolumeConstraints(mDrawSoftBodyVolumeConstraints: boolean): void;
+        mDrawSoftBodyVolumeConstraints: boolean;
+        get_mDrawSoftBodySkinConstraints(): boolean;
+        set_mDrawSoftBodySkinConstraints(mDrawSoftBodySkinConstraints: boolean): void;
+        mDrawSoftBodySkinConstraints: boolean;
+        get_mDrawSoftBodyLRAConstraints(): boolean;
+        set_mDrawSoftBodyLRAConstraints(mDrawSoftBodyLRAConstraints: boolean): void;
+        mDrawSoftBodyLRAConstraints: boolean;
+        get_mDrawSoftBodyRods(): boolean;
+        set_mDrawSoftBodyRods(mDrawSoftBodyRods: boolean): void;
+        mDrawSoftBodyRods: boolean;
+        get_mDrawSoftBodyRodStates(): boolean;
+        set_mDrawSoftBodyRodStates(mDrawSoftBodyRodStates: boolean): void;
+        mDrawSoftBodyRodStates: boolean;
+        get_mDrawSoftBodyRodBendTwistConstraints(): boolean;
+        set_mDrawSoftBodyRodBendTwistConstraints(mDrawSoftBodyRodBendTwistConstraints: boolean): void;
+        mDrawSoftBodyRodBendTwistConstraints: boolean;
+        get_mDrawSoftBodyPredictedBounds(): boolean;
+        set_mDrawSoftBodyPredictedBounds(mDrawSoftBodyPredictedBounds: boolean): void;
+        mDrawSoftBodyPredictedBounds: boolean;
+        get_mDrawSoftBodyConstraintColor(): ESoftBodyConstraintColor;
+        set_mDrawSoftBodyConstraintColor(mDrawSoftBodyConstraintColor: ESoftBodyConstraintColor): void;
+        mDrawSoftBodyConstraintColor: ESoftBodyConstraintColor;
+    }
+    class DebugRendererVertexTraits {
+        get_mPositionOffset(): number;
+        set_mPositionOffset(mPositionOffset: number): void;
+        readonly mPositionOffset: number;
+        get_mNormalOffset(): number;
+        set_mNormalOffset(mNormalOffset: number): void;
+        readonly mNormalOffset: number;
+        get_mUVOffset(): number;
+        set_mUVOffset(mUVOffset: number): void;
+        readonly mUVOffset: number;
+        get_mSize(): number;
+        set_mSize(mSize: number): void;
+        readonly mSize: number;
+    }
+    class DebugRendererTriangleTraits {
+        get_mVOffset(): number;
+        set_mVOffset(mVOffset: number): void;
+        readonly mVOffset: number;
+        get_mSize(): number;
+        set_mSize(mSize: number): void;
+        readonly mSize: number;
+    }
+    class DebugRendererEm {
+        Initialize(): void;
+        DrawBodies(system: PhysicsSystem, inDrawSettings: BodyManagerDrawSettings): void;
+        DrawBodies(system: PhysicsSystem): void;
+        DrawConstraints(system: PhysicsSystem): void;
+        DrawConstraintLimits(system: PhysicsSystem): void;
+        DrawConstraintReferenceFrame(system: PhysicsSystem): void;
+        DrawShape(inShape: Shape, inModelMatrix: RMat44, inScale: Vec3, inColor: Color, inDrawWireFrame: boolean): void;
+        DrawBody(body: Body, inColor: Color, inDrawWireFrame: boolean): void;
+        DrawConstraint(inConstraint: Constraint): void;
+    }
+    class DebugRendererJS extends DebugRendererEm {
+        constructor();
+        DrawLine(inFrom: number, inTo: number, inColor: number): void;
+        DrawTriangle(inV1: number, inV2: number, inV3: number, inColor: number, inCastShadow: number): void;
+        DrawText3D(inPosition: number, inString: number, inStringLen: number, inColor: number, inHeight: number): void;
+        DrawGeometryWithID(inModelMatrix: number, inWorldSpaceBounds: number, inLODScaleSq: number, inModelColor: number, inGeometryID: number, inCullMode: number, inCastShadow: number, inDrawMode: number): void;
+        CreateTriangleBatchID(inTriangles: number, inTriangleCount: number): number;
+        CreateTriangleBatchIDWithIndex(inVertices: number, inVertexCount: number, inIndices: number, inIndexCount: number): number;
     }
 }
