@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+.DS_Store
+native/jolt/Build/
+!native/jolt/dist/
+!native/jolt/dist/**
+
+# Local source checkouts used for API research.
+references/

@@ -1,0 +1,43 @@
+{
+  "name": "jolt-ts",
+  "version": "0.0.0",
+  "description": "TypeScript-first ergonomic wrapper for JoltPhysics.js",
+  "type": "module",
+  "packageManager": "pnpm@10.33.2",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "native/jolt/dist",
+    "native/jolt/LICENSE",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:native": "sh native/jolt/build.sh",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "check:native": "node scripts/check-native-artifacts.mjs",
+    "prepack": "pnpm run build && pnpm run check:native",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "jolt",
+    "physics",
+    "wasm",
+    "typescript"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0",
+    "webidl-dts-gen": "^1.11.0"
+  }
+}
