@@ -1,6 +1,6 @@
 export default Jolt;
 declare function Jolt<T>(target?: T): Promise<T & typeof Jolt>;
-declare module Jolt {
+declare namespace Jolt {
     function destroy(obj: any): void;
     function _malloc(size: number): number;
     function _free(ptr: number): void;
@@ -2169,6 +2169,19 @@ declare module Jolt {
         Clear(): void;
         Rewind(): void;
         IsEqual(inReference: StateRecorderImpl): boolean;
+    }
+    class JoltBodyInterfaceHelpers {
+        SetPosition(inInterface: BodyInterface, inBodyID: BodyID, inX: number, inY: number, inZ: number, inActivationMode: EActivation): void;
+        SetRotation(inInterface: BodyInterface, inBodyID: BodyID, inX: number, inY: number, inZ: number, inW: number, inActivationMode: EActivation): void;
+        SetPositionAndRotation(inInterface: BodyInterface, inBodyID: BodyID, inPositionX: number, inPositionY: number, inPositionZ: number, inRotationX: number, inRotationY: number, inRotationZ: number, inRotationW: number, inActivationMode: EActivation): void;
+        SetLinearVelocity(inInterface: BodyInterface, inBodyID: BodyID, inX: number, inY: number, inZ: number): void;
+        SetAngularVelocity(inInterface: BodyInterface, inBodyID: BodyID, inX: number, inY: number, inZ: number): void;
+        AddImpulse(inInterface: BodyInterface, inBodyID: BodyID, inX: number, inY: number, inZ: number): void;
+        AddImpulseAtPoint(inInterface: BodyInterface, inBodyID: BodyID, inImpulseX: number, inImpulseY: number, inImpulseZ: number, inPointX: number, inPointY: number, inPointZ: number): void;
+        AddAngularImpulse(inInterface: BodyInterface, inBodyID: BodyID, inX: number, inY: number, inZ: number): void;
+        AddForce(inInterface: BodyInterface, inBodyID: BodyID, inX: number, inY: number, inZ: number, inActivationMode: EActivation): void;
+        AddForceAtPoint(inInterface: BodyInterface, inBodyID: BodyID, inForceX: number, inForceY: number, inForceZ: number, inPointX: number, inPointY: number, inPointZ: number, inActivationMode: EActivation): void;
+        AddTorque(inInterface: BodyInterface, inBodyID: BodyID, inX: number, inY: number, inZ: number, inActivationMode: EActivation): void;
     }
     class JoltPhysicsScene {
         constructor();

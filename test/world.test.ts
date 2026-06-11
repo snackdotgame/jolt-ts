@@ -53,6 +53,225 @@ describe("World", () => {
     }
   });
 
+  it("can read transforms and velocities into caller-owned arrays", async () => {
+    const world = await World.create();
+
+    try {
+      const body = world.createBody(
+        Body.dynamic()
+          .shape(Shape.sphere(0.5))
+          .translation(1, 2, 3)
+          .layer("moving")
+          .linearVelocity(0.25, -0.5, 0.75)
+          .angularVelocity(0.1, 0.2, 0.3)
+      );
+
+      const position = new Float32Array(3);
+      const rotation = new Float32Array(4);
+      const gravity = new Float32Array(3);
+      const linearVelocity = [0, 0, 0] as [number, number, number];
+      const angularVelocity = { x: 0, y: 0, z: 0 };
+      const pointVelocity = { x: 0, y: 0, z: 0 };
+
+      expect(world.gravityInto(gravity)).toBe(gravity);
+      expect(gravity[0]).toBe(0);
+      expect(gravity[1]).toBeCloseTo(-9.81);
+      expect(gravity[2]).toBe(0);
+      expect(body.translationInto(position)).toBe(position);
+      expect(Array.from(position)).toEqual([1, 2, 3]);
+      expect(body.rotationInto(rotation)).toBe(rotation);
+      expect(rotation[3]).toBe(1);
+      expect(body.linearVelocityInto(linearVelocity)).toBe(linearVelocity);
+      expect(linearVelocity[0]).toBeCloseTo(0.25);
+      expect(linearVelocity[1]).toBeCloseTo(-0.5);
+      expect(linearVelocity[2]).toBeCloseTo(0.75);
+      expect(body.angularVelocityInto(angularVelocity)).toBe(angularVelocity);
+      expect(angularVelocity.x).toBeCloseTo(0.1);
+      expect(angularVelocity.y).toBeCloseTo(0.2);
+      expect(angularVelocity.z).toBeCloseTo(0.3);
+      const pointVelocityValue = body.pointVelocity([2, 2, 3]);
+      expect(pointVelocityValue.x).toBeCloseTo(0.25);
+      expect(pointVelocityValue.y).toBeCloseTo(-0.2);
+      expect(pointVelocityValue.z).toBeCloseTo(0.55);
+      expect(body.pointVelocityInto([2, 2, 3], pointVelocity)).toBe(pointVelocity);
+      expect(pointVelocity.x).toBeCloseTo(0.25);
+      expect(pointVelocity.y).toBeCloseTo(-0.2);
+      expect(pointVelocity.z).toBeCloseTo(0.55);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("uses numeric hot-path body operations without JS-owned native vector temporaries", async () => {
+    const world = await World.create();
+
+    try {
+      const body = world.createBody(
+        Body.dynamic()
+          .shape(Shape.sphere(0.5))
+          .translation(0, 2, 0)
+          .layer("moving")
+      );
+
+      body.setLinearVelocity(1, 2, 3);
+      body.setAngularVelocity(0.1, 0.2, 0.3);
+      body.applyImpulse(0.05, 0, 0);
+      body.applyAngularImpulse(0.4, 0.5, 0.6);
+      body.addForce(0, 1, 0);
+      body.addTorque(0.7, 0.8, 0.9);
+
+      expect(body.linearVelocity().x).toBeGreaterThan(1);
+      expect(body.linearVelocity().y).toBe(2);
+      expect(body.linearVelocity().z).toBe(3);
+      expect(body.angularVelocity().x).toBeGreaterThan(0.1);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("uses linear-cast motion quality to stop fast projectiles at thin colliders", async () => {
+    const world = await World.create({ gravity: [0, 0, 0], deterministic: "cross-platform" });
+
+    try {
+      world.createBody({
+        type: "static",
+        shape: Shape.box({ halfExtents: [0.025, 2, 2] }),
+        position: [0, 0, 0],
+        layer: "static"
+      });
+      const projectile = world.createBody(
+        Body.dynamic()
+          .shape(Shape.sphere(0.05))
+          .translation(-2, 0, 0)
+          .linearVelocity(200, 0, 0)
+          .motionQuality("linearCast")
+          .layer("moving")
+      );
+
+      world.step(1 / 60);
+
+      expect(projectile.translation().x).toBeLessThan(0);
+      expect(projectile.translation().x).toBeGreaterThan(-0.2);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("returns normals and filtered hits from world queries", async () => {
+    const world = await World.create({ gravity: [0, -9.81, 0] });
+
+    try {
+      const floor = world.createBody({
+        type: "static",
+        shape: Shape.box({ halfExtents: [10, 0.5, 10] }),
+        position: [0, -0.5, 0],
+        friction: 0.75,
+        layer: "static"
+      });
+      const ignored = world.createBody({
+        type: "dynamic",
+        shape: Shape.sphere(0.25),
+        position: [0, 1, 0],
+        layer: "moving"
+      });
+
+      const rayHit = world.castRay([0, 2, 0], [0, -5, 0], { excludeBody: ignored });
+      expect(rayHit?.body).toBe(floor);
+      expect(rayHit?.point.y).toBeCloseTo(0);
+      expect(rayHit?.normal).toEqual({ x: 0, y: 1, z: 0 });
+
+      const shapeHit = world.castShape(Shape.sphere(0.25), [0, 2, 0], undefined, [0, -3, 0], {
+        excludeBody: ignored
+      });
+      expect(shapeHit?.body).toBe(floor);
+      expect(shapeHit?.contactPointOnBody.y).toBeCloseTo(0);
+      expect(shapeHit?.normal.y).toBeGreaterThan(0.99);
+      expect(shapeHit?.fraction).toBeCloseTo(1.75 / 3, 3);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("exposes body metadata needed by controller code", async () => {
+    const world = await World.create();
+
+    try {
+      const body = world.createBody(
+        Body.dynamic()
+          .shape(Shape.sphere(0.5))
+          .translation(0, 2, 0)
+          .layer("moving")
+          .friction(0.35)
+          .gravityFactor(0.5)
+      );
+
+      expect(body.mass()).toBeGreaterThan(0);
+      expect(body.motionType()).toBe("dynamic");
+      expect(body.friction()).toBeCloseTo(0.35);
+      expect(body.gravityFactor()).toBeCloseTo(0.5);
+      expect(body.allowSleeping()).toBe(true);
+
+      body.setGravityFactor(0);
+      body.setFriction(0.8);
+      body.setAllowSleeping(false);
+      expect(body.gravityFactor()).toBe(0);
+      expect(body.friction()).toBeCloseTo(0.8);
+      expect(body.allowSleeping()).toBe(false);
+
+      body.setAllowSleeping(true);
+      expect(body.allowSleeping()).toBe(true);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("can override dynamic body mass through density or explicit mass", async () => {
+    const world = await World.create();
+
+    try {
+      const defaultBody = world.createBody({
+        type: "dynamic",
+        shape: Shape.box([1, 0.5, 2])
+      });
+      const densityBody = world.createBody({
+        type: "dynamic",
+        shape: Shape.box([1, 0.5, 2]),
+        density: 200
+      });
+      const massBody = world.createBody({
+        type: "dynamic",
+        shape: Shape.box([1, 0.5, 2]),
+        mass: 42
+      });
+      const massPropertiesBody = world.createBody({
+        type: "dynamic",
+        shape: Shape.box([1, 0.5, 2]),
+        massProperties: {
+          mass: 24,
+          inertia: [10, 0, 0, 0, 12, 0, 0, 0, 14]
+        }
+      });
+      const offsetComBody = world.createBody({
+        type: "static",
+        shape: Shape.offsetCenterOfMass(Shape.box([1, 1, 1]), [0, 1, 0]),
+        position: [0, 0, 0]
+      });
+
+      expect(densityBody.mass()).toBeCloseTo(defaultBody.mass() * 0.2, 2);
+      expect(massBody.mass()).toBeCloseTo(42, 4);
+      expect(massPropertiesBody.mass()).toBeCloseTo(24, 4);
+      expect(offsetComBody.translation()).toEqual({ x: 0, y: 0, z: 0 });
+      expect(offsetComBody.centerOfMassPosition()).toEqual({ x: 0, y: 1, z: 0 });
+      expect(offsetComBody.centerOfMassPositionInto({ x: 0, y: 0, z: 0 })).toEqual({ x: 0, y: 1, z: 0 });
+      expect(world.withRawBody(offsetComBody, (rawBody) => rawBody.GetCenterOfMassPosition().GetY())).toBeCloseTo(1);
+
+      const offsetComHit = world.castRay([0, 3, 0], [0, -6, 0], { filter: ({ body }) => body === offsetComBody });
+      expect(offsetComHit?.point.y).toBeCloseTo(1);
+    } finally {
+      world.dispose();
+    }
+  });
+
   it("supports static body descriptors", async () => {
     const world = await World.create();
 
@@ -88,6 +307,30 @@ describe("World", () => {
     await expect(World.create({ runtime: unmarkedRuntime, deterministic: "cross-platform" })).rejects.toThrow(
       /not known to be compiled with cross-platform deterministic support/
     );
+  });
+
+  it("assumes the package's build features for a pre-initialized raw module", async () => {
+    const runtime = await loadJolt();
+    const world = await World.create({ raw: runtime.raw, deterministic: "cross-platform" });
+
+    try {
+      expect(world.runtime.features.crossPlatformDeterministic).toBe(true);
+      expect(world.deterministicSimulation()).toBe(true);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("lets features override the assumed build metadata for foreign raw modules", async () => {
+    const runtime = await loadJolt();
+
+    await expect(
+      World.create({
+        raw: runtime.raw,
+        features: { crossPlatformDeterministic: false },
+        deterministic: "cross-platform"
+      })
+    ).rejects.toThrow(/not known to be compiled with cross-platform deterministic support/);
   });
 
   it("replays the same deterministic simulation exactly", async () => {
@@ -402,6 +645,33 @@ describe("World", () => {
     }
   });
 
+  it("exposes no-copy recorder views for immediate hashing or transfer", async () => {
+    const runtime = await loadJolt();
+    const source = await createSnapshotWorld(runtime);
+    const recorder = source.world.createStateRecorder();
+
+    try {
+      source.world.saveState(recorder);
+      const view = recorder.view();
+      const bytes = recorder.bytes();
+
+      expect(view.byteLength).toBe(bytes.byteLength);
+      expect(bytesEqual(view, bytes)).toBe(true);
+      expect(view.buffer).not.toBe(bytes.buffer);
+
+      const input = new Uint8Array(bytes);
+      const inputRecorder = source.world.createStateRecorder(input);
+      try {
+        expect(inputRecorder.view().buffer).toBe(input.buffer);
+      } finally {
+        inputRecorder.dispose();
+      }
+    } finally {
+      recorder.dispose();
+      source.world.dispose();
+    }
+  });
+
   it("restores binary scene snapshots with preserved body IDs", async () => {
     const runtime = await loadJolt();
     const source = await createSnapshotWorld(runtime, { churnBodyIds: true });
@@ -463,6 +733,97 @@ describe("World", () => {
     world.dispose();
 
     expect(runtime.freeMemory()).toBe(before);
+  });
+
+  it("locks rotations via allowedDofs so a capsule cannot tip over", async () => {
+    const world = await World.create({ gravity: [0, -20, 0] });
+
+    try {
+      world.createBody({
+        type: "static",
+        shape: Shape.box({ halfExtents: [10, 0.5, 10] }),
+        position: [0, -0.5, 0],
+        layer: "static"
+      });
+      const capsule = world.createBody(
+        Body.dynamic()
+          .shape(Shape.capsule({ halfHeight: 0.3, radius: 0.3 }))
+          .translation(0, 0.6, 0)
+          .lockRotations()
+          .layer("moving")
+      );
+
+      // Shove it sideways off-center: an unlocked capsule would topple.
+      capsule.applyImpulse({ x: 4, y: 0, z: 1 }, { x: 0, y: 1.1, z: 0 });
+      for (let i = 0; i < 120; i++) world.step(1 / 60);
+
+      const rot = capsule.rotation();
+      expect(Math.abs(rot.x)).toBeLessThan(1e-6);
+      expect(Math.abs(rot.z)).toBeLessThan(1e-6);
+      expect(Math.abs(rot.w)).toBeCloseTo(1, 5);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("casts rays and reports the hit body, fraction, and point", async () => {
+    const world = await World.create();
+
+    try {
+      const floor = world.createBody({
+        type: "static",
+        shape: Shape.box({ halfExtents: [10, 0.5, 10] }),
+        position: [0, -0.5, 0],
+        layer: "static"
+      });
+      const ledge = world.createBody({
+        type: "static",
+        shape: Shape.box({ halfExtents: [10, 0.25, 10] }),
+        position: [0, 1.5, 0],
+        layer: "static"
+      });
+
+      const hit = world.castRay([0.5, 2, 0.5], [0, -5, 0]);
+      expect(hit).not.toBeNull();
+      expect(hit!.body).toBe(ledge);
+      expect(hit!.fraction).toBeCloseTo(0.05, 4); // 0.25m down out of 5m
+      expect(hit!.point.y).toBeCloseTo(1.75, 4);
+
+      const allHits = world.castRayAll([0.5, 2, 0.5], [0, -5, 0]);
+      expect(allHits.map((rayHit) => rayHit.body)).toEqual([ledge, floor]);
+      expect(allHits[0]!.point.y).toBeCloseTo(1.75, 4);
+      expect(allHits[1]!.point.y).toBeCloseTo(0, 4);
+
+      const filteredHits = world.castRayAll([0.5, 2, 0.5], [0, -5, 0], { excludeBody: ledge });
+      expect(filteredHits.map((rayHit) => rayHit.body)).toEqual([floor]);
+
+      expect(world.castRay([0.5, 2, 0.5], [0, 5, 0])).toBeNull();
+      expect(world.castRayAll([0.5, 2, 0.5], [0, 5, 0])).toEqual([]);
+      expect(world.castRay([50, 2, 50], [0, -5, 0])).toBeNull();
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("moves kinematic bodies with moveKinematic, deriving their velocity", async () => {
+    const world = await World.create();
+
+    try {
+      const platform = world.createBody({
+        type: "kinematic",
+        shape: Shape.box({ halfExtents: [1, 0.2, 1] }),
+        position: [0, 0, 0],
+        layer: "moving"
+      });
+
+      platform.moveKinematic([0.5, 0, 0], { x: 0, y: 0, z: 0, w: 1 }, 1 / 60);
+      const vel = platform.linearVelocity();
+      expect(vel.x).toBeCloseTo(0.5 * 60, 3);
+      world.step(1 / 60);
+      expect(platform.translation().x).toBeCloseTo(0.5, 3);
+    } finally {
+      world.dispose();
+    }
   });
 });
 

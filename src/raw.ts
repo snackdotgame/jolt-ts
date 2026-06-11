@@ -29,10 +29,13 @@ export type EmbeddedWasmBuild =
   | "wasm-compat-multithread"
   | "debug-wasm-compat-multithread";
 
+// Structural stand-in for URL, so consumers without the DOM lib typecheck.
+export type UrlLike = { toString(): string; readonly href: string };
+
 export interface LoadJoltOptions {
   readonly build?: JoltBuild;
   readonly locateFile?: (path: string, prefix: string) => string;
-  readonly wasmUrl?: string | URL;
+  readonly wasmUrl?: string | UrlLike;
   readonly module?: Record<string, unknown>;
 }
 
@@ -78,6 +81,14 @@ const externalWasmFiles: Record<ExternalWasmBuild, string> = {
   wasm: "jolt-physics.wasm.wasm",
   "wasm-multithread": "jolt-physics.multithread.wasm.wasm"
 };
+
+// The feature set of this package's own artifact for `build` — including
+// cross-platform determinism, which the native build enables by default.
+// Only valid as a description of the package's artifacts: a module obtained
+// elsewhere (e.g. the upstream jolt-physics npm package) should not assume it.
+export function featuresForBuild(build: JoltBuild): JoltRuntimeFeatures {
+  return nativeBuildFeatures[build];
+}
 
 export function isWasmBuild(build: JoltBuild): build is JoltWasmBuild {
   return (joltWasmBuilds as readonly string[]).includes(build);

@@ -8,6 +8,7 @@ type RawJoltWithRecorder = JoltRuntime["raw"] & {
 export interface NativeByteRecorder {
   readonly raw: Record<string, any>;
   bytes(): Uint8Array;
+  view(): Uint8Array;
   clear(): void;
   rewind(input?: Uint8Array): void;
   dispose(): void;
@@ -17,7 +18,8 @@ export interface NativeByteRecorder {
 export function createStateRecorder(runtime: JoltRuntime, input?: Uint8Array): NativeByteRecorder {
   const raw = runtime.raw as RawJoltWithRecorder;
   const recorder = new raw.StateRecorderJS();
-  let buffer = input ? Uint8Array.from(input) : new Uint8Array(4096);
+  let buffer = input ?? new Uint8Array(4096);
+  let ownsBuffer = input === undefined;
   let readPos = 0;
   let writePos = input?.byteLength ?? 0;
   let failed = false;
@@ -35,11 +37,7 @@ export function createStateRecorder(runtime: JoltRuntime, input?: Uint8Array): N
 
   recorder.WriteBytes = (inData: number, size: number) => {
     const required = writePos + size;
-    if (required > buffer.byteLength) {
-      const next = new Uint8Array(Math.max(required, buffer.byteLength * 2));
-      next.set(buffer);
-      buffer = next;
-    }
+    ensureWritableCapacity(required);
 
     buffer.set(raw.HEAPU8.subarray(inData, inData + size), writePos);
     writePos += size;
@@ -63,8 +61,17 @@ export function createStateRecorder(runtime: JoltRuntime, input?: Uint8Array): N
       assertOpen();
       return buffer.slice(0, writePos);
     },
+    view: () => {
+      assertOpen();
+      return buffer.subarray(0, writePos);
+    },
     clear: () => {
       assertOpen();
+      if (!ownsBuffer) {
+        buffer = new Uint8Array(4096);
+        ownsBuffer = true;
+      }
+
       readPos = 0;
       writePos = 0;
       failed = false;
@@ -72,7 +79,8 @@ export function createStateRecorder(runtime: JoltRuntime, input?: Uint8Array): N
     rewind: (nextInput?: Uint8Array) => {
       assertOpen();
       if (nextInput) {
-        buffer = Uint8Array.from(nextInput);
+        buffer = nextInput;
+        ownsBuffer = false;
         writePos = nextInput.byteLength;
       }
 
@@ -87,5 +95,17 @@ export function createStateRecorder(runtime: JoltRuntime, input?: Uint8Array): N
     if (disposed) {
       throw new Error("NativeByteRecorder is already disposed.");
     }
+  }
+
+  function ensureWritableCapacity(required: number): void {
+    if (ownsBuffer && required <= buffer.byteLength) {
+      return;
+    }
+
+    const nextLength = Math.max(required, ownsBuffer ? buffer.byteLength * 2 : Math.max(4096, buffer.byteLength));
+    const next = new Uint8Array(nextLength);
+    next.set(buffer.subarray(0, writePos));
+    buffer = next;
+    ownsBuffer = true;
   }
 }

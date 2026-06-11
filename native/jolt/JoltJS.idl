@@ -2055,6 +2055,20 @@ interface StateRecorderImpl {
 
 StateRecorderImpl implements StateRecorder;
 
+interface JoltBodyInterfaceHelpers {
+	static void SetPosition([Ref] BodyInterface inInterface, [Const, Ref] BodyID inBodyID, float inX, float inY, float inZ, EActivation inActivationMode);
+	static void SetRotation([Ref] BodyInterface inInterface, [Const, Ref] BodyID inBodyID, float inX, float inY, float inZ, float inW, EActivation inActivationMode);
+	static void SetPositionAndRotation([Ref] BodyInterface inInterface, [Const, Ref] BodyID inBodyID, float inPositionX, float inPositionY, float inPositionZ, float inRotationX, float inRotationY, float inRotationZ, float inRotationW, EActivation inActivationMode);
+	static void SetLinearVelocity([Ref] BodyInterface inInterface, [Const, Ref] BodyID inBodyID, float inX, float inY, float inZ);
+	static void SetAngularVelocity([Ref] BodyInterface inInterface, [Const, Ref] BodyID inBodyID, float inX, float inY, float inZ);
+	static void AddImpulse([Ref] BodyInterface inInterface, [Const, Ref] BodyID inBodyID, float inX, float inY, float inZ);
+	static void AddImpulseAtPoint([Ref] BodyInterface inInterface, [Const, Ref] BodyID inBodyID, float inImpulseX, float inImpulseY, float inImpulseZ, float inPointX, float inPointY, float inPointZ);
+	static void AddAngularImpulse([Ref] BodyInterface inInterface, [Const, Ref] BodyID inBodyID, float inX, float inY, float inZ);
+	static void AddForce([Ref] BodyInterface inInterface, [Const, Ref] BodyID inBodyID, float inX, float inY, float inZ, EActivation inActivationMode);
+	static void AddForceAtPoint([Ref] BodyInterface inInterface, [Const, Ref] BodyID inBodyID, float inForceX, float inForceY, float inForceZ, float inPointX, float inPointY, float inPointZ, EActivation inActivationMode);
+	static void AddTorque([Ref] BodyInterface inInterface, [Const, Ref] BodyID inBodyID, float inX, float inY, float inZ, EActivation inActivationMode);
+};
+
 interface JoltPhysicsScene {
 	void JoltPhysicsScene();
 	static JoltPhysicsScene sFromPhysicsSystem([Const, Ref] PhysicsSystem inSystem);

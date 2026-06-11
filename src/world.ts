@@ -6,10 +6,23 @@ import {
   intoRawRVec3,
   intoRawVec3,
   readRawQuat,
+  readRawQuatInto,
   readRawRVec3,
-  readRawVec3
+  readRawRVec3Into,
+  readRawVec3,
+  readRawVec3Into,
+  readQuaternionComponents,
+  readVector3Components
 } from "./math.js";
-import { type JoltBuild, type JoltModule, JoltRuntime, loadJolt } from "./raw.js";
+import {
+  featuresForBuild,
+  type UrlLike,
+  type JoltBuild,
+  type JoltModule,
+  JoltRuntime,
+  type JoltRuntimeFeatures,
+  loadJolt,
+} from "./raw.js";
 import {
   buildShape,
   createShapeResource,
@@ -20,31 +33,58 @@ import { createStateRecorder, type NativeByteRecorder } from "./snapshot.js";
 import type { NativeScope } from "./native.js";
 import type {
   ActivationMode,
+  AllowedDof,
   BodyTransformOptions,
   BodyType,
   CreateBodyOptions,
   LayerConfig,
   LayerDefinition,
+  MassPropertiesInput,
+  Matrix3Input,
   MotionQuality,
   Quaternion,
   QuaternionInput,
+  QuaternionOutput,
   Vector3,
-  Vector3Input
+  Vector3Input,
+  Vector3Output
 } from "./types.js";
 
 type RawJolt = JoltModule & Record<string, any>;
+type RawValue = Record<string, any>;
 type RawBody = Record<string, any>;
 type RawBodyID = Record<string, any>;
+type RawShape = Record<string, any>;
+type Matrix3Components = {
+  xx: number;
+  xy: number;
+  xz: number;
+  yx: number;
+  yy: number;
+  yz: number;
+  zx: number;
+  zy: number;
+  zz: number;
+};
 type Mutable<T> = {
   -readonly [K in keyof T]: T[K];
 };
 
+const scratchVectorA = { x: 0, y: 0, z: 0 };
+const scratchVectorB = { x: 0, y: 0, z: 0 };
+const scratchQuaternion = { x: 0, y: 0, z: 0, w: 1 };
+
 export interface WorldCreateOptions {
   readonly runtime?: JoltRuntime;
+  // A pre-initialized module from this package's own `build` artifact. It is
+  // assumed to have that build's features (including cross-platform
+  // determinism); pass `features` to override when wrapping a module from
+  // somewhere else.
   readonly raw?: JoltModule;
+  readonly features?: Partial<JoltRuntimeFeatures>;
   readonly build?: JoltBuild;
   readonly locateFile?: (path: string, prefix: string) => string;
-  readonly wasmUrl?: string | URL;
+  readonly wasmUrl?: string | UrlLike;
   readonly module?: Record<string, unknown>;
   readonly gravity?: Vector3Input;
   readonly layers?: LayerConfig;
@@ -53,6 +93,36 @@ export interface WorldCreateOptions {
   readonly maxContactConstraints?: number;
   readonly maxWorkerThreads?: number;
   readonly deterministic?: boolean | "cross-platform";
+}
+
+export interface RayHit {
+  readonly bodyId: number;
+  readonly body: Body | undefined;
+  readonly fraction: number;
+  readonly point: Vector3;
+  readonly normal: Vector3;
+}
+
+export interface QueryHitFilterContext {
+  readonly bodyId: number;
+  readonly body: Body | undefined;
+}
+
+export interface QueryOptions {
+  readonly excludeBody?: Body;
+  readonly includeSensors?: boolean;
+  readonly filter?: (hit: QueryHitFilterContext) => boolean;
+}
+
+export interface ShapeCastHit {
+  readonly bodyId: number;
+  readonly body: Body | undefined;
+  readonly fraction: number;
+  readonly point: Vector3;
+  readonly normal: Vector3;
+  readonly contactPointOnCaster: Vector3;
+  readonly contactPointOnBody: Vector3;
+  readonly penetrationDepth: number;
 }
 
 export type StateRecorderState = "none" | "global" | "bodies" | "contacts" | "constraints" | "all" | number;
@@ -135,6 +205,21 @@ export class BodyDesc {
     return this;
   }
 
+  density(density: number): this {
+    this.#options.density = density;
+    return this;
+  }
+
+  mass(mass: number): this {
+    this.#options.mass = mass;
+    return this;
+  }
+
+  massProperties(massProperties: MassPropertiesInput): this {
+    this.#options.massProperties = massProperties;
+    return this;
+  }
+
   restitution(restitution: number): this {
     this.#options.restitution = restitution;
     return this;
@@ -182,6 +267,17 @@ export class BodyDesc {
   allowSleeping(allowSleeping: boolean): this {
     this.#options.allowSleeping = allowSleeping;
     return this;
+  }
+
+  allowedDofs(...dofs: AllowedDof[]): this {
+    this.#options.allowedDofs = dofs;
+    return this;
+  }
+
+  // A body that translates freely but never rotates — the usual setup for a
+  // character capsule that must stay upright.
+  lockRotations(): this {
+    return this.allowedDofs("translation-x", "translation-y", "translation-z");
   }
 
   toOptions(): CreateBodyOptions {
@@ -248,6 +344,8 @@ export class World {
   #layers: LayerRegistry;
   #bodies = new Map<number, Body>();
   #disposed = false;
+  #rayQuery: Record<string, any> | null = null;
+  #shapeCastQuery: Record<string, any> | null = null;
 
   private constructor(runtime: JoltRuntime, joltInterface: Record<string, any>, layers: LayerRegistry) {
     this.runtime = runtime;
@@ -332,6 +430,11 @@ export class World {
     return readRawVec3(this.#physicsSystem.GetGravity());
   }
 
+  gravityInto<T extends Vector3Output>(out: T): T {
+    this.assertAlive();
+    return readRawVec3Into(this.#physicsSystem.GetGravity(), out);
+  }
+
   deterministicSimulation(): boolean {
     this.assertAlive();
     return this.#physicsSystem.GetPhysicsSettings().mDeterministicSimulation;
@@ -347,6 +450,156 @@ export class World {
   createStateRecorder(input?: Uint8Array): NativeByteRecorder {
     this.assertAlive();
     return createStateRecorder(this.runtime, input);
+  }
+
+  // Closest-hit raycast against everything in the world. `direction` carries
+  // the ray length (cast from origin to origin + direction). Returns null on
+  // miss. The hit `body` is undefined for raw bodies this World didn't create.
+  castRay(origin: Vector3Input, direction: Vector3Input, options: QueryOptions = {}): RayHit | null {
+    return this.#visitRayHits(origin, direction, options, (hit) => hit) ?? null;
+  }
+
+  // Sorted all-hit raycast. This uses the same collector and filtering rules
+  // as castRay, but returns every accepted hit from nearest to farthest.
+  castRayAll(origin: Vector3Input, direction: Vector3Input, options: QueryOptions = {}): RayHit[] {
+    const results: RayHit[] = [];
+    this.#visitRayHits(origin, direction, options, (hit) => {
+      results.push(hit);
+      return undefined;
+    });
+    return results;
+  }
+
+  #visitRayHits<T>(
+    origin: Vector3Input,
+    direction: Vector3Input,
+    options: QueryOptions,
+    visitor: (hit: RayHit) => T | undefined
+  ): T | undefined {
+    this.assertAlive();
+    const raw = this.runtime.raw as RawJolt;
+    if (!this.#rayQuery) {
+      this.#rayQuery = {
+        settings: new raw.RayCastSettings(),
+        collector: new raw.CastRayAllHitCollisionCollector(),
+        bpFilter: new raw.BroadPhaseLayerFilter(),
+        objFilter: new raw.ObjectLayerFilter(),
+        bodyFilter: new raw.BodyFilter(),
+        shapeFilter: new raw.ShapeFilter()
+      };
+    }
+    const q = this.#rayQuery;
+    const o = readVector3Components(origin, "origin", scratchVectorA);
+    const d = readVector3Components(direction, "direction", scratchVectorB);
+    return this.runtime.withScope((scope) => {
+      const ray = scope.own(new raw.RRayCast());
+      ray.set_mOrigin(scope.own(new raw.RVec3(o.x, o.y, o.z)));
+      ray.set_mDirection(scope.own(new raw.Vec3(d.x, d.y, d.z)));
+      q.collector.Reset();
+      this.#physicsSystem
+        .GetNarrowPhaseQuery()
+        .CastRay(ray, q.settings, q.collector, q.bpFilter, q.objFilter, q.bodyFilter, q.shapeFilter);
+      if (!q.collector.HadHit()) {
+        return undefined;
+      }
+      q.collector.Sort();
+      const hits = q.collector.get_mHits();
+      for (let index = 0; index < hits.size(); index += 1) {
+        const hit = hits.at(index);
+        const bodyId = hit.get_mBodyID().GetIndexAndSequenceNumber();
+        const body = this.#bodies.get(bodyId);
+        if (!queryHitAllowed(bodyId, body, options)) {
+          continue;
+        }
+        const fraction = hit.get_mFraction();
+        const point = { x: o.x + d.x * fraction, y: o.y + d.y * fraction, z: o.z + d.z * fraction };
+        const result = visitor({
+          bodyId,
+          body,
+          fraction,
+          point,
+          normal: readRayHitNormal(body, hit, point, d)
+        });
+        if (result !== undefined) {
+          return result;
+        }
+      }
+      return undefined;
+    });
+  }
+
+  // Closest shape cast against the world. `direction` carries the cast length,
+  // matching Jolt's RShapeCast and this wrapper's raycast convention.
+  castShape(
+    shapeInput: ShapeInput,
+    position: Vector3Input,
+    rotation: QuaternionInput | undefined,
+    direction: Vector3Input,
+    options: QueryOptions = {}
+  ): ShapeCastHit | null {
+    this.assertAlive();
+    const raw = this.runtime.raw as RawJolt;
+    if (!this.#shapeCastQuery) {
+      this.#shapeCastQuery = {
+        settings: new raw.ShapeCastSettings(),
+        collector: new raw.CastShapeAllHitCollisionCollector(),
+        bpFilter: new raw.BroadPhaseLayerFilter(),
+        objFilter: new raw.ObjectLayerFilter(),
+        bodyFilter: new raw.BodyFilter(),
+        shapeFilter: new raw.ShapeFilter()
+      };
+    }
+
+    const q = this.#shapeCastQuery;
+    const d = readVector3Components(direction, "direction", scratchVectorB);
+    const scope = this.runtime.scope();
+    try {
+      const shape = buildShape(this.runtime, shapeInput, scope);
+      const scale = scope.own(new raw.Vec3(1, 1, 1));
+      const start = scope.own(
+        raw.RMat44.prototype.sRotationTranslation(
+          intoRawQuat(this.runtime.raw, scope, rotation),
+          intoRawRVec3(this.runtime.raw, scope, position)
+        )
+      );
+      const cast = scope.own(new raw.RShapeCast(shape.raw, scale, start, scope.own(new raw.Vec3(d.x, d.y, d.z))));
+      const baseOffset = scope.own(new raw.RVec3(0, 0, 0));
+      scope.defer(() => shape.release());
+
+      q.collector.Reset();
+      this.#physicsSystem
+        .GetNarrowPhaseQuery()
+        .CastShape(cast, q.settings, baseOffset, q.collector, q.bpFilter, q.objFilter, q.bodyFilter, q.shapeFilter);
+      if (!q.collector.HadHit()) {
+        return null;
+      }
+
+      q.collector.Sort();
+      const hits = q.collector.get_mHits();
+      for (let index = 0; index < hits.size(); index += 1) {
+        const hit = hits.at(index);
+        const bodyId = hit.get_mBodyID2().GetIndexAndSequenceNumber();
+        const body = this.#bodies.get(bodyId);
+        if (!queryHitAllowed(bodyId, body, options)) {
+          continue;
+        }
+        const fraction = hit.get_mFraction();
+        const contactPointOnBody = readRawVec3(hit.get_mContactPointOn2());
+        return {
+          bodyId,
+          body,
+          fraction,
+          point: readRawRVec3(cast.GetPointOnRay(fraction)),
+          normal: readShapeHitNormal(body, hit, contactPointOnBody, d),
+          contactPointOnCaster: readRawVec3(hit.get_mContactPointOn1()),
+          contactPointOnBody,
+          penetrationDepth: hit.get_mPenetrationDepth()
+        };
+      }
+      return null;
+    } finally {
+      scope.dispose();
+    }
   }
 
   saveState(): Uint8Array;
@@ -481,8 +734,8 @@ export class World {
       const rotation = intoRawQuat(this.runtime.raw, scope, bodyOptions.rotation);
       const settings = scope.own(new raw.BodyCreationSettings(shape.raw, position, rotation, motionType, layer));
 
+      applyBodySettings(this.runtime.raw, scope, settings, bodyOptions, shape.raw);
       shape.release();
-      applyBodySettings(this.runtime.raw, scope, settings, bodyOptions);
 
       const rawBody = this.#bodyInterface.CreateBody(settings);
       if (!rawBody) {
@@ -529,6 +782,20 @@ export class World {
 
     for (const body of [...this.#bodies.values()]) {
       this.removeBody(body);
+    }
+
+    if (this.#rayQuery) {
+      for (const value of Object.values(this.#rayQuery)) {
+        this.runtime.destroyRaw(value);
+      }
+      this.#rayQuery = null;
+    }
+
+    if (this.#shapeCastQuery) {
+      for (const value of Object.values(this.#shapeCastQuery)) {
+        this.runtime.destroyRaw(value);
+      }
+      this.#shapeCastQuery = null;
     }
 
     this.shapes.dispose();
@@ -585,6 +852,7 @@ export class Body {
   private readonly rawBody: RawBody;
   private readonly rawId: RawBodyID;
   private readonly bodyInterface: Record<string, any>;
+  private readonly bodyHelpers: Record<string, any>;
   private validBody = true;
 
   private constructor(
@@ -593,7 +861,8 @@ export class Body {
     rawId: RawBodyID,
     id: number,
     userData: unknown,
-    bodyInterface: Record<string, any>
+    bodyInterface: Record<string, any>,
+    bodyHelpers: Record<string, any>
   ) {
     this.world = world;
     this.rawBody = rawBody;
@@ -601,6 +870,7 @@ export class Body {
     this.id = id;
     this.userData = userData;
     this.bodyInterface = bodyInterface;
+    this.bodyHelpers = bodyHelpers;
   }
 
   static dynamic(): BodyDesc {
@@ -625,7 +895,7 @@ export class Body {
     const idRef = rawBody.GetID();
     const id = idRef.GetIndexAndSequenceNumber();
     const ownedId = new raw.BodyID(id);
-    return new Body(world, rawBody, ownedId, id, userData, world.raw.bodyInterface);
+    return new Body(world, rawBody, ownedId, id, userData, world.raw.bodyInterface, raw.JoltBodyInterfaceHelpers.prototype);
   }
 
   get valid(): boolean {
@@ -637,9 +907,29 @@ export class Body {
     return readRawRVec3(this.bodyInterface.GetPosition(this.rawId));
   }
 
+  translationInto<T extends Vector3Output>(out: T): T {
+    this.assertValid();
+    return readRawRVec3Into(this.bodyInterface.GetPosition(this.rawId), out);
+  }
+
+  centerOfMassPosition(): Vector3 {
+    this.assertValid();
+    return readRawRVec3(this.rawBody.GetCenterOfMassPosition());
+  }
+
+  centerOfMassPositionInto<T extends Vector3Output>(out: T): T {
+    this.assertValid();
+    return readRawRVec3Into(this.rawBody.GetCenterOfMassPosition(), out);
+  }
+
   rotation(): Quaternion {
     this.assertValid();
     return readRawQuat(this.bodyInterface.GetRotation(this.rawId));
+  }
+
+  rotationInto<T extends QuaternionOutput>(out: T): T {
+    this.assertValid();
+    return readRawQuatInto(this.bodyInterface.GetRotation(this.rawId), out);
   }
 
   linearVelocity(): Vector3 {
@@ -647,100 +937,275 @@ export class Body {
     return readRawVec3(this.bodyInterface.GetLinearVelocity(this.rawId));
   }
 
+  linearVelocityInto<T extends Vector3Output>(out: T): T {
+    this.assertValid();
+    return readRawVec3Into(this.bodyInterface.GetLinearVelocity(this.rawId), out);
+  }
+
   angularVelocity(): Vector3 {
     this.assertValid();
     return readRawVec3(this.bodyInterface.GetAngularVelocity(this.rawId));
   }
 
+  angularVelocityInto<T extends Vector3Output>(out: T): T {
+    this.assertValid();
+    return readRawVec3Into(this.bodyInterface.GetAngularVelocity(this.rawId), out);
+  }
+
+  pointVelocity(point: Vector3Input): Vector3 {
+    this.assertValid();
+    const raw = this.world.runtime.raw as RawJolt;
+    return this.world.runtime.withScope((scope) => {
+      return readRawVec3(this.bodyInterface.GetPointVelocity(this.rawId, intoRawRVec3(raw, scope, point)));
+    });
+  }
+
+  pointVelocityInto<T extends Vector3Output>(point: Vector3Input, out: T): T {
+    this.assertValid();
+    const raw = this.world.runtime.raw as RawJolt;
+    return this.world.runtime.withScope((scope) => {
+      return readRawVec3Into(this.bodyInterface.GetPointVelocity(this.rawId, intoRawRVec3(raw, scope, point)), out);
+    });
+  }
+
+  mass(): number {
+    this.assertValid();
+    const motionProperties = this.rawBody.GetMotionProperties?.();
+    if (!motionProperties) {
+      return Infinity;
+    }
+    const inverseMass = motionProperties.GetInverseMass();
+    return inverseMass > 0 ? 1 / inverseMass : Infinity;
+  }
+
+  motionType(): BodyType {
+    this.assertValid();
+    return fromMotionType(this.world.runtime.raw as RawJolt, this.bodyInterface.GetMotionType(this.rawId));
+  }
+
+  friction(): number {
+    this.assertValid();
+    return this.bodyInterface.GetFriction(this.rawId);
+  }
+
+  setFriction(friction: number): void {
+    this.assertValid();
+    this.bodyInterface.SetFriction(this.rawId, friction);
+  }
+
+  gravityFactor(): number {
+    this.assertValid();
+    return this.bodyInterface.GetGravityFactor(this.rawId);
+  }
+
+  setGravityFactor(factor: number): void {
+    this.assertValid();
+    this.bodyInterface.SetGravityFactor(this.rawId, factor);
+  }
+
+  allowSleeping(): boolean {
+    this.assertValid();
+    return this.rawBody.GetAllowSleeping();
+  }
+
+  setAllowSleeping(allow: boolean): void {
+    this.assertValid();
+    this.rawBody.SetAllowSleeping(allow);
+    if (!allow) this.wakeUp();
+  }
+
+  isSensor(): boolean {
+    this.assertValid();
+    return this.bodyInterface.IsSensor(this.rawId);
+  }
+
+  isActive(): boolean {
+    this.assertValid();
+    return this.bodyInterface.IsActive(this.rawId);
+  }
+
+  wakeUp(): void {
+    this.assertValid();
+    this.bodyInterface.ActivateBody(this.rawId);
+  }
+
+  sleep(): void {
+    this.assertValid();
+    this.bodyInterface.DeactivateBody(this.rawId);
+  }
+
   setTranslation(position: Vector3Input, options: BodyTransformOptions = {}): void {
     this.assertValid();
-    this.world.runtime.withScope((scope) => {
-      this.bodyInterface.SetPosition(
-        this.rawId,
-        intoRawRVec3(this.world.runtime.raw, scope, position),
-        toActivation(this.world.runtime.raw as RawJolt, options.activate)
-      );
-    });
+    const value = readVector3Components(position, "position", scratchVectorA);
+    this.bodyHelpers.SetPosition(
+      this.bodyInterface,
+      this.rawId,
+      value.x,
+      value.y,
+      value.z,
+      toActivation(this.world.runtime.raw as RawJolt, options.activate)
+    );
   }
 
   setRotation(rotation: QuaternionInput, options: BodyTransformOptions = {}): void {
     this.assertValid();
-    this.world.runtime.withScope((scope) => {
-      this.bodyInterface.SetRotation(
-        this.rawId,
-        intoRawQuat(this.world.runtime.raw, scope, rotation),
-        toActivation(this.world.runtime.raw as RawJolt, options.activate)
-      );
-    });
+    const value = readQuaternionComponents(rotation, "rotation", scratchQuaternion);
+    this.bodyHelpers.SetRotation(
+      this.bodyInterface,
+      this.rawId,
+      value.x,
+      value.y,
+      value.z,
+      value.w,
+      toActivation(this.world.runtime.raw as RawJolt, options.activate)
+    );
   }
 
   setTransform(position: Vector3Input, rotation: QuaternionInput, options: BodyTransformOptions = {}): void {
     this.assertValid();
+    const positionValue = readVector3Components(position, "position", scratchVectorA);
+    const rotationValue = readQuaternionComponents(rotation, "rotation", scratchQuaternion);
+    this.bodyHelpers.SetPositionAndRotation(
+      this.bodyInterface,
+      this.rawId,
+      positionValue.x,
+      positionValue.y,
+      positionValue.z,
+      rotationValue.x,
+      rotationValue.y,
+      rotationValue.z,
+      rotationValue.w,
+      toActivation(this.world.runtime.raw as RawJolt, options.activate)
+    );
+  }
+
+  // Kinematic move: velocity is derived so the body arrives at the target
+  // transform after deltaTime, pushing dynamic bodies properly on the way —
+  // unlike setTransform, which teleports. The standard way to drive moving
+  // platforms and sweepers.
+  moveKinematic(position: Vector3Input, rotation: QuaternionInput, deltaTime: number): void {
+    this.assertValid();
+    const raw = this.world.runtime.raw;
     this.world.runtime.withScope((scope) => {
-      this.bodyInterface.SetPositionAndRotation(
+      this.bodyInterface.MoveKinematic(
         this.rawId,
-        intoRawRVec3(this.world.runtime.raw, scope, position),
-        intoRawQuat(this.world.runtime.raw, scope, rotation),
-        toActivation(this.world.runtime.raw as RawJolt, options.activate)
+        intoRawRVec3(raw, scope, position),
+        intoRawQuat(raw, scope, rotation),
+        deltaTime
       );
     });
   }
 
-  setLinearVelocity(velocity: Vector3Input): void {
+  setLinearVelocity(velocity: Vector3Input): void;
+  setLinearVelocity(x: number, y: number, z: number): void;
+  setLinearVelocity(velocityOrX: Vector3Input | number, y?: number, z?: number): void {
     this.assertValid();
-    this.world.runtime.withScope((scope) => {
-      this.bodyInterface.SetLinearVelocity(this.rawId, intoRawVec3(this.world.runtime.raw, scope, velocity));
-    });
+    const value = readVectorArgComponents(velocityOrX, y, z, "linearVelocity", scratchVectorA);
+    this.bodyHelpers.SetLinearVelocity(this.bodyInterface, this.rawId, value.x, value.y, value.z);
   }
 
-  setAngularVelocity(velocity: Vector3Input): void {
+  setAngularVelocity(velocity: Vector3Input): void;
+  setAngularVelocity(x: number, y: number, z: number): void;
+  setAngularVelocity(velocityOrX: Vector3Input | number, y?: number, z?: number): void {
     this.assertValid();
-    this.world.runtime.withScope((scope) => {
-      this.bodyInterface.SetAngularVelocity(this.rawId, intoRawVec3(this.world.runtime.raw, scope, velocity));
-    });
+    const value = readVectorArgComponents(velocityOrX, y, z, "angularVelocity", scratchVectorA);
+    this.bodyHelpers.SetAngularVelocity(this.bodyInterface, this.rawId, value.x, value.y, value.z);
   }
 
-  applyImpulse(impulse: Vector3Input, point?: Vector3Input): void {
+  applyImpulse(x: number, y: number, z: number): void;
+  applyImpulse(impulse: Vector3Input, point?: Vector3Input): void;
+  applyImpulse(impulseOrX: Vector3Input | number, pointOrY?: Vector3Input | number, z?: number): void {
     this.assertValid();
-    this.world.runtime.withScope((scope) => {
-      const rawImpulse = intoRawVec3(this.world.runtime.raw, scope, impulse);
-      if (point) {
-        this.bodyInterface.AddImpulse(this.rawId, rawImpulse, intoRawRVec3(this.world.runtime.raw, scope, point));
-      } else {
-        this.bodyInterface.AddImpulse(this.rawId, rawImpulse);
-      }
-    });
-  }
+    if (typeof impulseOrX !== "number" && typeof pointOrY === "number") {
+      throw new TypeError("point must be a vector object or array.");
+    }
 
-  applyAngularImpulse(impulse: Vector3Input): void {
-    this.assertValid();
-    this.world.runtime.withScope((scope) => {
-      this.bodyInterface.AddAngularImpulse(this.rawId, intoRawVec3(this.world.runtime.raw, scope, impulse));
-    });
-  }
+    const y = typeof pointOrY === "number" ? pointOrY : undefined;
+    let point: Vector3Input | undefined;
+    if (typeof impulseOrX !== "number") {
+      point = pointOrY as Vector3Input | undefined;
+    }
 
-  addForce(force: Vector3Input, options: BodyTransformOptions = {}, point?: Vector3Input): void {
-    this.assertValid();
-    this.world.runtime.withScope((scope) => {
-      const rawForce = intoRawVec3(this.world.runtime.raw, scope, force);
-      const activation = toActivation(this.world.runtime.raw as RawJolt, options.activate);
-      if (point) {
-        this.bodyInterface.AddForce(this.rawId, rawForce, intoRawRVec3(this.world.runtime.raw, scope, point), activation);
-      } else {
-        this.bodyInterface.AddForce(this.rawId, rawForce, activation);
-      }
-    });
-  }
-
-  addTorque(torque: Vector3Input, options: BodyTransformOptions = {}): void {
-    this.assertValid();
-    this.world.runtime.withScope((scope) => {
-      this.bodyInterface.AddTorque(
+    const value = readVectorArgComponents(impulseOrX, y, z, "impulse", scratchVectorA);
+    if (point) {
+      const pointValue = readVector3Components(point, "point", scratchVectorB);
+      this.bodyHelpers.AddImpulseAtPoint(
+        this.bodyInterface,
         this.rawId,
-        intoRawVec3(this.world.runtime.raw, scope, torque),
-        toActivation(this.world.runtime.raw as RawJolt, options.activate)
+        value.x,
+        value.y,
+        value.z,
+        pointValue.x,
+        pointValue.y,
+        pointValue.z
       );
-    });
+    } else {
+      this.bodyHelpers.AddImpulse(this.bodyInterface, this.rawId, value.x, value.y, value.z);
+    }
+  }
+
+  applyAngularImpulse(impulse: Vector3Input): void;
+  applyAngularImpulse(x: number, y: number, z: number): void;
+  applyAngularImpulse(impulseOrX: Vector3Input | number, y?: number, z?: number): void {
+    this.assertValid();
+    const value = readVectorArgComponents(impulseOrX, y, z, "angularImpulse", scratchVectorA);
+    this.bodyHelpers.AddAngularImpulse(this.bodyInterface, this.rawId, value.x, value.y, value.z);
+  }
+
+  addForce(force: Vector3Input, options?: BodyTransformOptions, point?: Vector3Input): void;
+  addForce(x: number, y: number, z: number, options?: BodyTransformOptions): void;
+  addForce(
+    forceOrX: Vector3Input | number,
+    optionsOrY: BodyTransformOptions | number = {},
+    pointOrZ?: Vector3Input | number,
+    maybeOptions: BodyTransformOptions = {}
+  ): void {
+    this.assertValid();
+    const y = typeof optionsOrY === "number" ? optionsOrY : undefined;
+    const z = typeof pointOrZ === "number" ? pointOrZ : undefined;
+    const options = typeof forceOrX === "number" || typeof optionsOrY === "number" ? maybeOptions : optionsOrY;
+    const point = typeof forceOrX === "number" || typeof pointOrZ === "number" ? undefined : pointOrZ;
+    const value = readVectorArgComponents(forceOrX, y, z, "force", scratchVectorA);
+    const activation = toActivation(this.world.runtime.raw as RawJolt, options.activate);
+
+    if (point) {
+      const pointValue = readVector3Components(point, "point", scratchVectorB);
+      this.bodyHelpers.AddForceAtPoint(
+        this.bodyInterface,
+        this.rawId,
+        value.x,
+        value.y,
+        value.z,
+        pointValue.x,
+        pointValue.y,
+        pointValue.z,
+        activation
+      );
+    } else {
+      this.bodyHelpers.AddForce(this.bodyInterface, this.rawId, value.x, value.y, value.z, activation);
+    }
+  }
+
+  addTorque(torque: Vector3Input, options?: BodyTransformOptions): void;
+  addTorque(x: number, y: number, z: number, options?: BodyTransformOptions): void;
+  addTorque(
+    torqueOrX: Vector3Input | number,
+    yOrOptions?: number | BodyTransformOptions,
+    z?: number,
+    maybeOptions: BodyTransformOptions = {}
+  ): void {
+    this.assertValid();
+    const options = typeof torqueOrX === "number" ? maybeOptions : (yOrOptions as BodyTransformOptions | undefined) ?? {};
+    const y = typeof yOrOptions === "number" ? yOrOptions : undefined;
+    const value = readVectorArgComponents(torqueOrX, y, z, "torque", scratchVectorA);
+    this.bodyHelpers.AddTorque(
+      this.bodyInterface,
+      this.rawId,
+      value.x,
+      value.y,
+      value.z,
+      toActivation(this.world.runtime.raw as RawJolt, options.activate)
+    );
   }
 
   setMotionType(type: BodyType, options: BodyTransformOptions = {}): void {
@@ -868,13 +1333,14 @@ async function resolveRuntime(options: WorldCreateOptions): Promise<JoltRuntime>
   }
 
   if (options.raw) {
-    return new JoltRuntime(options.raw, options.build ?? "wasm-compat");
+    const build = options.build ?? "wasm-compat";
+    return new JoltRuntime(options.raw, build, { ...featuresForBuild(build), ...options.features });
   }
 
   const loadOptions: {
     build?: JoltBuild;
     locateFile?: (path: string, prefix: string) => string;
-    wasmUrl?: string | URL;
+    wasmUrl?: string | UrlLike;
     module?: Record<string, unknown>;
   } = {};
   if (options.build !== undefined) {
@@ -896,13 +1362,27 @@ function applyBodySettings(
   rawModule: JoltModule,
   scope: NativeScope,
   settings: Record<string, any>,
-  options: CreateBodyOptions
+  options: CreateBodyOptions,
+  rawShape: RawShape
 ): void {
   if (options.friction !== undefined) {
     settings.mFriction = options.friction;
   }
   if (options.restitution !== undefined) {
     settings.mRestitution = options.restitution;
+  }
+  if (options.massProperties !== undefined && (options.mass !== undefined || options.density !== undefined)) {
+    throw new TypeError("body massProperties cannot be combined with mass or density.");
+  }
+  if (options.massProperties !== undefined) {
+    applyMassPropertiesOverride(rawModule as RawJolt, scope, settings, options.massProperties);
+  } else if (options.mass !== undefined || options.density !== undefined) {
+    const mass = options.mass ?? massForDensity(rawShape, options.density ?? 1000);
+    if (!Number.isFinite(mass) || mass <= 0) {
+      throw new TypeError("body mass must be a positive finite number.");
+    }
+    settings.mOverrideMassProperties = (rawModule as RawJolt).EOverrideMassProperties_CalculateInertia;
+    settings.mMassPropertiesOverride.mMass = mass;
   }
   if (options.linearDamping !== undefined) {
     settings.mLinearDamping = options.linearDamping;
@@ -928,6 +1408,95 @@ function applyBodySettings(
   if (options.angularVelocity) {
     settings.mAngularVelocity = intoRawVec3(rawModule, scope, options.angularVelocity);
   }
+  if (options.allowedDofs) {
+    settings.mAllowedDOFs = toAllowedDofs(rawModule as RawJolt, options.allowedDofs);
+  }
+}
+
+function massForDensity(rawShape: RawShape, density: number): number {
+  if (!Number.isFinite(density) || density <= 0) {
+    throw new TypeError("body density must be a positive finite number.");
+  }
+  const massProperties = rawShape.GetMassProperties?.();
+  const defaultMass = massProperties?.mMass;
+  if (typeof defaultMass !== "number" || !Number.isFinite(defaultMass) || defaultMass <= 0) {
+    throw new Error("Shape does not provide mass properties; pass an explicit body mass instead.");
+  }
+  return defaultMass * (density / 1000);
+}
+
+function applyMassPropertiesOverride(
+  raw: RawJolt,
+  scope: NativeScope,
+  settings: Record<string, any>,
+  massProperties: MassPropertiesInput
+): void {
+  if (!Number.isFinite(massProperties.mass) || massProperties.mass <= 0) {
+    throw new TypeError("body massProperties.mass must be a positive finite number.");
+  }
+
+  const inertia = readMatrix3Components(massProperties.inertia, "massProperties.inertia");
+  settings.mOverrideMassProperties = raw.EOverrideMassProperties_MassAndInertiaProvided;
+  settings.mMassPropertiesOverride.mMass = massProperties.mass;
+
+  const inertiaMatrix = scope.own(new raw.Mat44());
+  inertiaMatrix.SetColumn3(0, scope.own(new raw.Vec3(inertia.xx, inertia.yx, inertia.zx)));
+  inertiaMatrix.SetColumn3(1, scope.own(new raw.Vec3(inertia.xy, inertia.yy, inertia.zy)));
+  inertiaMatrix.SetColumn3(2, scope.own(new raw.Vec3(inertia.xz, inertia.yz, inertia.zz)));
+  settings.mMassPropertiesOverride.mInertia = inertiaMatrix;
+}
+
+function readMatrix3Components(input: Matrix3Input, label: string): Matrix3Components {
+  const components: Matrix3Components = Array.isArray(input) || ArrayBuffer.isView(input)
+    ? (() => {
+      const values = input as ArrayLike<number>;
+      return {
+        xx: numberAt(values, 0, label),
+        xy: numberAt(values, 1, label),
+        xz: numberAt(values, 2, label),
+        yx: numberAt(values, 3, label),
+        yy: numberAt(values, 4, label),
+        yz: numberAt(values, 5, label),
+        zx: numberAt(values, 6, label),
+        zy: numberAt(values, 7, label),
+        zz: numberAt(values, 8, label)
+      };
+    })()
+    : input as Matrix3Components;
+
+  for (const [key, value] of Object.entries(components)) {
+    if (!Number.isFinite(value)) {
+      throw new TypeError(`${label}.${key} must be a finite number.`);
+    }
+  }
+  return components;
+}
+
+function toAllowedDofs(raw: RawJolt, dofs: readonly AllowedDof[]): number {
+  let mask = 0;
+  for (const dof of dofs) {
+    switch (dof) {
+      case "translation-x":
+        mask |= raw.EAllowedDOFs_TranslationX as number;
+        break;
+      case "translation-y":
+        mask |= raw.EAllowedDOFs_TranslationY as number;
+        break;
+      case "translation-z":
+        mask |= raw.EAllowedDOFs_TranslationZ as number;
+        break;
+      case "rotation-x":
+        mask |= raw.EAllowedDOFs_RotationX as number;
+        break;
+      case "rotation-y":
+        mask |= raw.EAllowedDOFs_RotationY as number;
+        break;
+      case "rotation-z":
+        mask |= raw.EAllowedDOFs_RotationZ as number;
+        break;
+    }
+  }
+  return mask;
 }
 
 function toMotionType(raw: RawJolt, type: BodyType): number {
@@ -941,6 +1510,16 @@ function toMotionType(raw: RawJolt, type: BodyType): number {
   }
 }
 
+function fromMotionType(raw: RawJolt, type: number): BodyType {
+  if (type === raw.EMotionType_Static) {
+    return "static";
+  }
+  if (type === raw.EMotionType_Kinematic) {
+    return "kinematic";
+  }
+  return "dynamic";
+}
+
 function toMotionQuality(raw: RawJolt, quality: MotionQuality): number {
   switch (quality) {
     case "discrete":
@@ -952,6 +1531,76 @@ function toMotionQuality(raw: RawJolt, quality: MotionQuality): number {
 
 function toActivation(raw: RawJolt, mode: ActivationMode | undefined): number {
   return mode === false || mode === "dontActivate" ? raw.EActivation_DontActivate : raw.EActivation_Activate;
+}
+
+function queryHitAllowed(bodyId: number, body: Body | undefined, options: QueryOptions): boolean {
+  if (options.excludeBody && body === options.excludeBody) {
+    return false;
+  }
+  if (!options.includeSensors && body?.isSensor()) {
+    return false;
+  }
+  return options.filter?.({ bodyId, body }) ?? true;
+}
+
+function readRayHitNormal(body: Body | undefined, hit: RawValue, point: Vector3, direction: Vector3): Vector3 {
+  if (!body) {
+    return { x: 0, y: 0, z: 0 };
+  }
+
+  const normal = body.world.runtime.withScope((scope) => {
+    return readRawVec3(
+      body.rawUnsafe().GetWorldSpaceSurfaceNormal(
+        hit.get_mSubShapeID2(),
+        scope.own(new (body.world.runtime.raw as RawJolt).RVec3(point.x, point.y, point.z))
+      )
+    );
+  });
+  return faceAgainstDirection(normalizeVector(normal), direction);
+}
+
+function readShapeHitNormal(body: Body | undefined, hit: RawValue, point: Vector3, direction: Vector3): Vector3 {
+  if (body) {
+    const normal = body.world.runtime.withScope((scope) => {
+      return readRawVec3(
+        body.rawUnsafe().GetWorldSpaceSurfaceNormal(
+          hit.get_mSubShapeID2(),
+          scope.own(new (body.world.runtime.raw as RawJolt).RVec3(point.x, point.y, point.z))
+        )
+      );
+    });
+    return faceAgainstDirection(normalizeVector(normal), direction);
+  }
+
+  const normal = normalizeVector(readRawVec3(hit.get_mPenetrationAxis()));
+  normal.x = -normal.x;
+  normal.y = -normal.y;
+  normal.z = -normal.z;
+  return faceAgainstDirection(normal, direction);
+}
+
+function faceAgainstDirection(normal: Vector3, direction: Vector3): Vector3 {
+  if (dot(normal, direction) > 0) {
+    normal.x = -normal.x;
+    normal.y = -normal.y;
+    normal.z = -normal.z;
+  }
+  return normal;
+}
+
+function normalizeVector(vector: Vector3): Vector3 {
+  const length = Math.hypot(vector.x, vector.y, vector.z);
+  if (length <= 1e-12) {
+    return { x: 0, y: 0, z: 0 };
+  }
+  vector.x /= length;
+  vector.y /= length;
+  vector.z /= length;
+  return vector;
+}
+
+function dot(a: Vector3, b: Vector3): number {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
 function toStateRecorderState(raw: RawJolt, state: StateRecorderState): number {
@@ -1013,4 +1662,33 @@ function vectorArg(valueOrX: Vector3Input | number, y: number | undefined, z: nu
   }
 
   return [valueOrX, y, z];
+}
+
+function numberAt(input: ArrayLike<number>, index: number, label: string): number {
+  const value = input[index];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new TypeError(`${label}[${index}] must be a finite number.`);
+  }
+  return value;
+}
+
+function readVectorArgComponents<T extends { x: number; y: number; z: number }>(
+  valueOrX: Vector3Input | number,
+  y: number | undefined,
+  z: number | undefined,
+  label: string,
+  out: T
+): T {
+  if (typeof valueOrX !== "number") {
+    return readVector3Components(valueOrX, label, out);
+  }
+
+  if (!Number.isFinite(valueOrX) || typeof y !== "number" || !Number.isFinite(y) || typeof z !== "number" || !Number.isFinite(z)) {
+    throw new TypeError(`${label} requires finite x, y, and z numbers.`);
+  }
+
+  out.x = valueOrX;
+  out.y = y;
+  out.z = z;
+  return out;
 }

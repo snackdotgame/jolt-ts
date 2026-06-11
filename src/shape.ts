@@ -56,6 +56,12 @@ export interface CompoundShapeDescriptor {
   readonly mutable?: boolean;
 }
 
+export interface OffsetCenterOfMassShapeDescriptor {
+  readonly kind: "offsetCenterOfMass";
+  readonly shape: ShapeInput;
+  readonly offset: Vector3Input;
+}
+
 export type ShapeDescriptor =
   | SphereShapeDescriptor
   | BoxShapeDescriptor
@@ -63,7 +69,8 @@ export type ShapeDescriptor =
   | CylinderShapeDescriptor
   | ConvexHullShapeDescriptor
   | MeshShapeDescriptor
-  | CompoundShapeDescriptor;
+  | CompoundShapeDescriptor
+  | OffsetCenterOfMassShapeDescriptor;
 
 export type ShapeInput = ShapeDescriptor | ShapeResource;
 
@@ -147,6 +154,10 @@ export const Shape = {
     return options.mutable === undefined
       ? { kind: "compound", children }
       : { kind: "compound", children, mutable: options.mutable };
+  },
+
+  offsetCenterOfMass(shape: ShapeInput, offset: Vector3Input): OffsetCenterOfMassShapeDescriptor {
+    return { kind: "offsetCenterOfMass", shape, offset };
   }
 };
 
@@ -209,6 +220,9 @@ export function buildShape(runtime: JoltRuntime, input: ShapeInput, scope: Nativ
 
     case "compound":
       return createCompoundShape(runtime, input, scope);
+
+    case "offsetCenterOfMass":
+      return createOffsetCenterOfMassShape(runtime, input, scope);
   }
 }
 
@@ -288,6 +302,18 @@ function createCompoundShape(runtime: JoltRuntime, input: CompoundShapeDescripto
   }
 
   return retainShapeFromSettings(runtime, settings);
+}
+
+function createOffsetCenterOfMassShape(runtime: JoltRuntime, input: OffsetCenterOfMassShapeDescriptor, scope: NativeScope): BuiltShape {
+  const raw = runtime.raw as RawJolt;
+  const childShape = buildShape(runtime, input.shape, scope);
+  const offset = intoRawVec3(runtime.raw, scope, input.offset);
+
+  try {
+    return retainShape(new raw.OffsetCenterOfMassShape(childShape.raw, offset));
+  } finally {
+    childShape.release();
+  }
 }
 
 function retainShapeFromSettings(runtime: JoltRuntime, settings: RawShapeSettings): BuiltShape {

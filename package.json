@@ -1,6 +1,6 @@
 {
   "name": "jolt-ts",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "TypeScript-first ergonomic wrapper for Jolt Physics WASM",
   "type": "module",
   "packageManager": "pnpm@10.33.2",
@@ -9,11 +9,15 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "default": "./dist/index.js"
-    }
+    },
+    "./native/jolt/dist/*": "./native/jolt/dist/*"
   },
   "files": [
     "dist",
+    "src",
+    "docs/api-directions.md",
     "native/jolt/dist",
     "native/jolt/LICENSE",
     "README.md",
@@ -21,19 +25,34 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "build:native": "sh native/jolt/build.sh",
+    "build:native": "sh native/jolt/build.sh && node scripts/patch-bundler-compat.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "check:native": "node scripts/check-native-artifacts.mjs",
-    "prepack": "pnpm run build && pnpm run check:native",
-    "test": "vitest run"
+    "prepack": "pnpm run build && pnpm run patch:native && pnpm run check:native",
+    "test": "vitest run",
+    "patch:native": "node scripts/patch-bundler-compat.mjs"
   },
   "keywords": [
     "jolt",
+    "jolt-physics",
     "physics",
+    "physics-engine",
+    "game-physics",
     "wasm",
     "typescript"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vmg-dev/jolt-ts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vmg-dev/jolt-ts/issues"
+  },
+  "homepage": "https://github.com/vmg-dev/jolt-ts#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "@types/node": "^20.12.12",
     "typescript": "^5.4.5",

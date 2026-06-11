@@ -535,6 +535,68 @@ private:
 #endif
 };
 
+/// JavaScript-facing numeric helpers for hot BodyInterface calls. Passing Vec3/RVec3/Quat
+/// through WebIDL forces JS callers to allocate temporary native objects; these helpers keep
+/// the temporaries on the C++ side for common game-loop operations.
+class JoltBodyInterfaceHelpers
+{
+public:
+	static void				SetPosition(BodyInterface &inInterface, const BodyID &inBodyID, float inX, float inY, float inZ, EActivation inActivationMode)
+	{
+		inInterface.SetPosition(inBodyID, RVec3(inX, inY, inZ), inActivationMode);
+	}
+
+	static void				SetRotation(BodyInterface &inInterface, const BodyID &inBodyID, float inX, float inY, float inZ, float inW, EActivation inActivationMode)
+	{
+		inInterface.SetRotation(inBodyID, Quat(inX, inY, inZ, inW), inActivationMode);
+	}
+
+	static void				SetPositionAndRotation(BodyInterface &inInterface, const BodyID &inBodyID, float inPositionX, float inPositionY, float inPositionZ, float inRotationX, float inRotationY, float inRotationZ, float inRotationW, EActivation inActivationMode)
+	{
+		inInterface.SetPositionAndRotation(inBodyID, RVec3(inPositionX, inPositionY, inPositionZ), Quat(inRotationX, inRotationY, inRotationZ, inRotationW), inActivationMode);
+	}
+
+	static void				SetLinearVelocity(BodyInterface &inInterface, const BodyID &inBodyID, float inX, float inY, float inZ)
+	{
+		inInterface.SetLinearVelocity(inBodyID, Vec3(inX, inY, inZ));
+	}
+
+	static void				SetAngularVelocity(BodyInterface &inInterface, const BodyID &inBodyID, float inX, float inY, float inZ)
+	{
+		inInterface.SetAngularVelocity(inBodyID, Vec3(inX, inY, inZ));
+	}
+
+	static void				AddImpulse(BodyInterface &inInterface, const BodyID &inBodyID, float inX, float inY, float inZ)
+	{
+		inInterface.AddImpulse(inBodyID, Vec3(inX, inY, inZ));
+	}
+
+	static void				AddImpulseAtPoint(BodyInterface &inInterface, const BodyID &inBodyID, float inImpulseX, float inImpulseY, float inImpulseZ, float inPointX, float inPointY, float inPointZ)
+	{
+		inInterface.AddImpulse(inBodyID, Vec3(inImpulseX, inImpulseY, inImpulseZ), RVec3(inPointX, inPointY, inPointZ));
+	}
+
+	static void				AddAngularImpulse(BodyInterface &inInterface, const BodyID &inBodyID, float inX, float inY, float inZ)
+	{
+		inInterface.AddAngularImpulse(inBodyID, Vec3(inX, inY, inZ));
+	}
+
+	static void				AddForce(BodyInterface &inInterface, const BodyID &inBodyID, float inX, float inY, float inZ, EActivation inActivationMode)
+	{
+		inInterface.AddForce(inBodyID, Vec3(inX, inY, inZ), inActivationMode);
+	}
+
+	static void				AddForceAtPoint(BodyInterface &inInterface, const BodyID &inBodyID, float inForceX, float inForceY, float inForceZ, float inPointX, float inPointY, float inPointZ, EActivation inActivationMode)
+	{
+		inInterface.AddForce(inBodyID, Vec3(inForceX, inForceY, inForceZ), RVec3(inPointX, inPointY, inPointZ), inActivationMode);
+	}
+
+	static void				AddTorque(BodyInterface &inInterface, const BodyID &inBodyID, float inX, float inY, float inZ, EActivation inActivationMode)
+	{
+		inInterface.AddTorque(inBodyID, Vec3(inX, inY, inZ), inActivationMode);
+	}
+};
+
 /// JavaScript-facing wrapper for PhysicsScene binary snapshots. Jolt's native PhysicsScene
 /// can serialize topology efficiently, but it recreates bodies with fresh IDs. This wrapper
 /// stores body IDs next to the scene so SaveState snapshots remain compatible after restore.

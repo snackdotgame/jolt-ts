@@ -1,16 +1,14 @@
 # jolt-ts
 
-Exploration repo for a TypeScript-first API on top of
-Jolt Physics WASM.
-
-Reference checkouts used for the initial API review:
-
-- `references/JoltPhysics.js` at `ba5cc91`
-- `references/rapier.js` at `0fd32c1`
+TypeScript-first ergonomic bindings for Jolt Physics WASM.
 
 The package owns its raw WASM build instead of depending on the published
 `jolt-physics` npm package. The vendored binding layer lives in `native/jolt`
 and fetches Jolt C++ directly during `pnpm run build:native`.
+
+```sh
+pnpm add jolt-ts
+```
 
 ## WASM Builds
 
@@ -63,6 +61,11 @@ const world = await World.create({ runtime });
 Multithreaded builds are selectable the same way, but the host page/runtime must
 support Jolt's thread requirements.
 
+The npm package includes the generated Jolt JS/WASM artifacts for all supported
+build variants, including debug and multithreaded builds. Prefer `loadJolt()`
+for normal use; the `./native/jolt/dist/*` export is available for advanced
+integrations that need direct access to the generated initializers.
+
 ## Native Build
 
 Build the raw Jolt artifacts before running tests or packing from a clean clone:
@@ -106,6 +109,27 @@ const state = serverWorld.saveState("all", stateFilter);
 clientWorld.restoreState(state, stateFilter);
 ```
 
+For game-loop code, prefer caller-owned buffers and reusable recorders:
+
+```ts
+const position = new Float32Array(3);
+const rotation = new Float32Array(4);
+const recorder = world.createStateRecorder();
+
+body.translationInto(position);
+body.rotationInto(rotation);
+body.setLinearVelocity(1, 0, 0);
+body.applyImpulse(0, 2, 0);
+
+recorder.clear();
+world.saveState(recorder);
+sendState(recorder.view());
+```
+
+Use `recorder.bytes()` when you need an owned copy. `recorder.view()` avoids
+that copy, so treat the returned view as short-lived and invalidate it before
+`clear()`, `rewind()`, or `dispose()`.
+
 The scene snapshot captures the compatible world layout, including bodies,
 configuration, shapes, constraints, and preserved Jolt body IDs. `saveState()`
 is the native Jolt `SaveState` payload for positions, velocities, active state,
@@ -114,4 +138,4 @@ contacts, and other simulation-owned state. For rollback, keep a ring buffer of
 body configuration changes, send a new scene snapshot before applying later
 state bytes.
 
-See [docs/api-directions.md](docs/api-directions.md) for the proposed API shape.
+See [docs/api-directions.md](docs/api-directions.md) for design notes.
