@@ -44,12 +44,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vmg-dev/jolt-ts.git"
+    "url": "git+https://github.com/snackdotgame/jolt-ts.git"
   },
   "bugs": {
-    "url": "https://github.com/vmg-dev/jolt-ts/issues"
+    "url": "https://github.com/snackdotgame/jolt-ts/issues"
   },
-  "homepage": "https://github.com/vmg-dev/jolt-ts#readme",
+  "homepage": "https://github.com/snackdotgame/jolt-ts#readme",
   "publishConfig": {
     "access": "public"
   },
