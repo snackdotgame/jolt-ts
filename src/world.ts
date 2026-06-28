@@ -29,6 +29,18 @@ import {
   ShapeResource,
   type ShapeInput
 } from "./shape.js";
+import {
+  type DebugColor,
+  type DebugRenderBuffers,
+  type DebugRenderColors,
+  type DebugRenderOptions,
+  DEFAULT_DEBUG_COLORS,
+  DebugLineSink,
+  emitBox,
+  emitCapsule,
+  emitCylinder,
+  emitSphere
+} from "./debug.js";
 import { createStateRecorder, type NativeByteRecorder } from "./snapshot.js";
 import type { NativeScope } from "./native.js";
 import type {
@@ -768,6 +780,94 @@ export class World {
 
   getBody(id: number): Body | undefined {
     return this.#bodies.get(id);
+  }
+
+  // Rapier-style debug rendering: walk every body and emit a flat line-segment
+  // buffer (vertices + per-vertex RGBA colors) outlining its collider in world
+  // space. Convex primitives draw as clean wireframes; any other shape falls
+  // back to the edges of its triangle mesh. Feed the result to a line renderer
+  // (e.g. three.js `LineSegments`). See `DebugRenderBuffers`.
+  debugRender(options: DebugRenderOptions = {}): DebugRenderBuffers {
+    this.assertAlive();
+    const raw = this.runtime.raw as RawJolt;
+    const colors: DebugRenderColors = { ...DEFAULT_DEBUG_COLORS, ...options.colors };
+    const segments = options.ringSegments ?? 24;
+    const sink = new DebugLineSink();
+
+    for (const body of this.#bodies.values()) {
+      if (!body.valid) {
+        continue;
+      }
+      const shape = body.rawUnsafe().GetShape();
+      sink.setTransform(body.translation(), body.rotation());
+      sink.setColor(debugColorFor(body, colors));
+
+      switch (shape.GetSubType()) {
+        case raw.EShapeSubType_Box: {
+          const he = readRawVec3(raw.castObject(shape, raw.BoxShape).GetHalfExtent());
+          emitBox(sink, he.x, he.y, he.z);
+          break;
+        }
+        case raw.EShapeSubType_Sphere:
+          emitSphere(sink, raw.castObject(shape, raw.SphereShape).GetRadius(), segments);
+          break;
+        case raw.EShapeSubType_Capsule: {
+          const capsule = raw.castObject(shape, raw.CapsuleShape);
+          emitCapsule(sink, capsule.GetRadius(), capsule.GetHalfHeightOfCylinder(), segments);
+          break;
+        }
+        case raw.EShapeSubType_Cylinder: {
+          const cylinder = raw.castObject(shape, raw.CylinderShape);
+          emitCylinder(sink, cylinder.GetRadius(), cylinder.GetHalfHeight(), segments);
+          break;
+        }
+        default:
+          this.#emitShapeTriangleEdges(sink, shape, body);
+          break;
+      }
+    }
+
+    return sink.toBuffers();
+  }
+
+  // Fallback for non-primitive shapes (mesh, convex hull, compound, height
+  // field): extract the collider's triangles in world space via Jolt's own
+  // `ShapeGetTriangles` and emit each triangle's three edges. Colors/transform
+  // are taken from the sink's current state; the geometry is already world-space.
+  #emitShapeTriangleEdges(sink: DebugLineSink, shape: RawShape, body: Body): void {
+    const raw = this.runtime.raw as RawJolt;
+    const scope = this.runtime.scope();
+    try {
+      const com = body.centerOfMassPosition();
+      const rotation = body.rotation();
+      const scale = scope.own(new raw.Vec3(1, 1, 1));
+      const comVec = scope.own(new raw.Vec3(com.x, com.y, com.z));
+      const rotQuat = scope.own(new raw.Quat(rotation.x, rotation.y, rotation.z, rotation.w));
+      const box = scope.own(raw.AABox.prototype.sBiggest());
+      const tris = scope.own(new raw.ShapeGetTriangles(shape, box, comVec, rotQuat, scale));
+
+      const byteSize = tris.GetVerticesSize();
+      if (byteSize > 0) {
+        const floatCount = (byteSize / Float32Array.BYTES_PER_ELEMENT) | 0;
+        const view = new Float32Array(raw.HEAPF32.buffer, tris.GetVerticesData(), floatCount);
+        for (let i = 0; i + 9 <= floatCount; i += 9) {
+          const ax = view[i]!;
+          const ay = view[i + 1]!;
+          const az = view[i + 2]!;
+          const bx = view[i + 3]!;
+          const by = view[i + 4]!;
+          const bz = view[i + 5]!;
+          const cx = view[i + 6]!;
+          const cy = view[i + 7]!;
+          const cz = view[i + 8]!;
+          sink.world(ax, ay, az, bx, by, bz);
+          sink.world(bx, by, bz, cx, cy, cz);
+          sink.world(cx, cy, cz, ax, ay, az);
+        }
+      }
+    } finally {
+      scope.dispose();
+    }
   }
 
   withRawBody<T>(body: Body, callback: (rawBody: RawBody) => T): T {
@@ -1531,6 +1631,20 @@ function toMotionQuality(raw: RawJolt, quality: MotionQuality): number {
 
 function toActivation(raw: RawJolt, mode: ActivationMode | undefined): number {
   return mode === false || mode === "dontActivate" ? raw.EActivation_DontActivate : raw.EActivation_Activate;
+}
+
+function debugColorFor(body: Body, colors: DebugRenderColors): DebugColor {
+  if (body.isSensor()) {
+    return colors.sensor;
+  }
+  switch (body.motionType()) {
+    case "static":
+      return colors.static;
+    case "kinematic":
+      return colors.kinematic;
+    default:
+      return body.isActive() ? colors.dynamic : colors.sleeping;
+  }
 }
 
 function queryHitAllowed(bodyId: number, body: Body | undefined, options: QueryOptions): boolean {

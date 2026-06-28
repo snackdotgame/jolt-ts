@@ -32,3 +32,15 @@ export {
   type WorldCreateOptions
 } from "./world.js";
 export { createStateRecorder, type NativeByteRecorder } from "./snapshot.js";
+export {
+  DEFAULT_DEBUG_COLORS,
+  DebugLineSink,
+  emitBox,
+  emitCapsule,
+  emitCylinder,
+  emitSphere,
+  type DebugColor,
+  type DebugRenderBuffers,
+  type DebugRenderColors,
+  type DebugRenderOptions
+} from "./debug.js";
