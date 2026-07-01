@@ -2,6 +2,8 @@
 
 TypeScript-first ergonomic bindings for Jolt Physics WASM.
 
+**📖 Documentation & live examples: <https://snackdotgame.github.io/jolt-ts/>**
+
 The package owns its raw WASM build instead of depending on the published
 `jolt-physics` npm package. The vendored binding layer lives in `native/jolt`
 and fetches Jolt C++ directly during `pnpm run build:native`.
@@ -130,12 +132,17 @@ Use `recorder.bytes()` when you need an owned copy. `recorder.view()` avoids
 that copy, so treat the returned view as short-lived and invalidate it before
 `clear()`, `rewind()`, or `dispose()`.
 
-The scene snapshot captures the compatible world layout, including bodies,
-configuration, shapes, constraints, and preserved Jolt body IDs. `saveState()`
-is the native Jolt `SaveState` payload for positions, velocities, active state,
-contacts, and other simulation-owned state. For rollback, keep a ring buffer of
-`saveState()` bytes and replay inputs after `restoreState()`. When topology or
-body configuration changes, send a new scene snapshot before applying later
-state bytes.
+`saveState()` is the native Jolt `SaveState` payload for positions, velocities,
+active state, contacts, and other simulation-owned state. It only restores into
+bodies that already exist — `restoreState()` never creates or destroys bodies.
+For rollback, keep a ring buffer of `saveState()` bytes and replay inputs after
+`restoreState()`; keep both peers in lockstep by applying body add/remove events
+in the same order so Jolt assigns matching body IDs (or pin IDs with the raw
+`CreateBodyWithID`). Use a `StateRecorderFilter` to save only a subset of bodies.
+
+`takeSceneSnapshot()` is the whole-world serialization — bodies, configuration,
+shapes, constraints, and preserved Jolt body IDs — via Jolt's `PhysicsScene`. It
+is for saving/loading a world or a one-shot full resync of a fresh peer, not for
+incrementally syncing topology changes.
 
 See [docs/api-directions.md](docs/api-directions.md) for design notes.

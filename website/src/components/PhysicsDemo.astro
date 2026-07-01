@@ -1,0 +1,45 @@
+---
+// A runnable jolt-ts simulation embedded in the docs.
+//
+// Usage in an .mdx page:
+//   import PhysicsDemo from "../../../components/PhysicsDemo.astro";
+//   <PhysicsDemo demo="falling-shapes" hint="Drag to orbit" caption="…" />
+//
+// `demo` must match a file at src/demos/<demo>.ts. The demo stays idle until the
+// reader presses "Run demo"; state is driven by the stage's `data-state`.
+interface Props {
+  demo: string;
+  caption?: string;
+  hint?: string;
+  height?: number;
+}
+
+const { demo, caption, hint = "Drag to orbit · scroll to zoom", height = 440 } = Astro.props;
+---
+
+<figure class="jolt-demo not-content">
+  <div class="jolt-demo__stage" data-state="idle" style={`height:${height}px`}>
+    <canvas data-jolt-demo={demo}></canvas>
+    {hint && <p class="jolt-demo__hint">{hint}</p>}
+    <div class="jolt-demo__toolbar">
+      <button type="button" data-action="toggle">❚❚ Pause</button>
+      <button type="button" data-action="reset" aria-label="Reset simulation">↺ Reset</button>
+    </div>
+    <div class="jolt-demo__overlay">
+      <button type="button" class="jolt-demo__run" data-action="run">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor" /></svg>
+        Run demo
+      </button>
+      <div class="jolt-demo__loading"><span class="jolt-demo__spinner"></span><span>Loading physics…</span></div>
+      <p class="jolt-demo__error" role="alert"></p>
+    </div>
+  </div>
+  {caption && <figcaption set:html={caption} />}
+</figure>
+
+<script>
+  import { mountDemos } from "../lib/demoRunner";
+  mountDemos();
+  // Starlight uses view transitions; re-scan after client-side navigation.
+  document.addEventListener("astro:page-load", mountDemos);
+</script>

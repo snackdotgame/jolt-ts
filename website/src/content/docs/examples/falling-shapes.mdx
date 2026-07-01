@@ -1,0 +1,66 @@
+---
+title: Falling shapes
+description: The physics "hello world" — a fountain of random primitives raining into a bin and stacking up.
+sidebar:
+  order: 1
+---
+
+import PhysicsDemo from "../../../components/PhysicsDemo.astro";
+
+The canonical first physics scene: dynamic bodies of every primitive shape fall under gravity, collide, and settle into a pile. It exercises body creation, the shape builders, and the fixed-timestep loop all at once.
+
+<PhysicsDemo demo="falling-shapes" hint="Drag to orbit · scroll to zoom" />
+
+## How it works
+
+A static floor plus four low walls form a bin. Then the demo drops a randomly-shaped dynamic body every few steps, recycling the oldest once there are too many so it runs indefinitely.
+
+```ts
+import { Shape } from "jolt-ts";
+
+// A static floor.
+world.createBody({
+  type: "static",
+  shape: Shape.box({ halfExtents: [13, 0.5, 13] }),
+  position: [0, -0.5, 0],
+  layer: "static",
+});
+
+function randomShape() {
+  const r = Math.random();
+  if (r < 0.3) return Shape.sphere(0.35 + Math.random() * 0.3);
+  if (r < 0.6) return Shape.box({ halfExtents: [0.4, 0.4, 0.4] });
+  if (r < 0.8) return Shape.capsule({ halfHeight: 0.3, radius: 0.25 });
+  return Shape.cylinder({ halfHeight: 0.35, radius: 0.35 });
+}
+
+function drop() {
+  return world.createBody({
+    type: "dynamic",
+    shape: randomShape(),
+    position: [(Math.random() - 0.5) * 6, 10, (Math.random() - 0.5) * 6],
+    restitution: 0.2,
+  });
+}
+```
+
+Each frame advances the world by a fixed step and (occasionally) drops another body:
+
+```ts
+let frame = 0;
+function tick() {
+  if (frame++ % 9 === 0) drop();
+  world.step(1 / 60);
+}
+```
+
+## Things to try
+
+- Swap `randomShape()` for a single shape to build a clean stack.
+- Increase `restitution` toward `1.0` to make everything bouncy — see [Restitution](/jolt-ts/examples/restitution/).
+- Give each body an `angularVelocity` so it tumbles as it falls.
+
+## Related
+
+- [Shapes gallery](/jolt-ts/examples/shapes-gallery/) — every shape type side by side.
+- [Bodies & motion](/jolt-ts/guides/bodies/) — body types, forces, and impulses.

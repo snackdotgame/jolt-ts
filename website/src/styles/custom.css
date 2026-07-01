@@ -1,0 +1,196 @@
+/* jolt-ts brand palette layered on top of Starlight's theme tokens. */
+:root {
+  --sl-color-accent-low: #16243f;
+  --sl-color-accent: #4f7cff;
+  --sl-color-accent-high: #b9d0ff;
+
+  --jolt-cyan: #6ee7f0;
+  --jolt-blue: #4f7cff;
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #d9e4ff;
+  --sl-color-accent: #2f5bdb;
+  --sl-color-accent-high: #14203a;
+}
+
+/* Hero: gradient wordmark + tighter tagline. */
+.hero h1 {
+  background: linear-gradient(120deg, var(--jolt-cyan), var(--jolt-blue));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Interactive physics demo surface. */
+.jolt-demo {
+  margin: 1.5rem 0;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.7rem;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 120% at 50% 0%, #10203f 0%, #0a1122 55%, #070b16 100%);
+}
+
+.jolt-demo__stage {
+  position: relative;
+  width: 100%;
+}
+
+.jolt-demo__stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.jolt-demo__toolbar {
+  position: absolute;
+  left: 0.6rem;
+  bottom: 0.6rem;
+  display: none;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+/* Controls (and the drag hint) only make sense once the demo is running. */
+.jolt-demo__stage[data-state="running"] .jolt-demo__toolbar,
+.jolt-demo__stage[data-state="paused"] .jolt-demo__toolbar {
+  display: flex;
+}
+
+.jolt-demo__toolbar button {
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: #eaf1ff;
+  background: rgba(20, 32, 60, 0.72);
+  border: 1px solid rgba(146, 178, 255, 0.34);
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.jolt-demo__toolbar button:hover {
+  background: rgba(38, 60, 110, 0.85);
+  border-color: rgba(146, 178, 255, 0.6);
+}
+
+.jolt-demo__hint {
+  position: absolute;
+  right: 0.6rem;
+  top: 0.6rem;
+  max-width: 60%;
+  text-align: right;
+  font-size: 0.72rem;
+  color: rgba(210, 224, 255, 0.72);
+  pointer-events: none;
+  display: none;
+}
+
+.jolt-demo__stage[data-state="running"] .jolt-demo__hint,
+.jolt-demo__stage[data-state="paused"] .jolt-demo__hint {
+  display: block;
+}
+
+/* Idle / loading / error overlay, centered over the (blank) canvas. */
+.jolt-demo__overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 0.8rem;
+  text-align: center;
+  padding: 1rem;
+  background: radial-gradient(120% 120% at 50% 40%, rgba(12, 22, 44, 0.25), rgba(6, 10, 22, 0.55));
+}
+
+.jolt-demo__stage[data-state="running"] .jolt-demo__overlay,
+.jolt-demo__stage[data-state="paused"] .jolt-demo__overlay {
+  display: none;
+}
+
+.jolt-demo__run {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-self: center;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #06101f;
+  background: linear-gradient(120deg, var(--jolt-cyan), var(--jolt-blue));
+  border: 0;
+  border-radius: 999px;
+  padding: 0.68rem 1.3rem;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(79, 124, 255, 0.35);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.jolt-demo__run:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 9px 26px rgba(79, 124, 255, 0.5);
+}
+
+/* Show the run button only when idle or after an error (as a retry). */
+.jolt-demo__stage:not([data-state="idle"]):not([data-state="error"]) .jolt-demo__run {
+  display: none;
+}
+
+.jolt-demo__loading {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: #cdd9ff;
+  font-size: 0.85rem;
+}
+
+.jolt-demo__stage[data-state="loading"] .jolt-demo__loading {
+  display: inline-flex;
+}
+
+.jolt-demo__error {
+  display: none;
+  margin: 0;
+  max-width: 26rem;
+  color: #ffb4b4;
+  font-size: 0.82rem;
+}
+
+.jolt-demo__stage[data-state="error"] .jolt-demo__error {
+  display: block;
+}
+
+.jolt-demo__spinner {
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: 0 auto;
+  border-radius: 50%;
+  border: 2px solid rgba(146, 178, 255, 0.25);
+  border-top-color: var(--jolt-cyan);
+  animation: jolt-spin 0.8s linear infinite;
+}
+
+@keyframes jolt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jolt-demo__spinner {
+    animation: none;
+  }
+}
+
+figure.jolt-demo figcaption {
+  padding: 0.55rem 0.8rem;
+  font-size: 0.8rem;
+  color: var(--sl-color-gray-3);
+  border-top: 1px solid var(--sl-color-gray-6);
+  background: var(--sl-color-black);
+}

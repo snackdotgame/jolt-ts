@@ -1,0 +1,50 @@
+---
+title: Shapes gallery
+description: Every shape jolt-ts can build — spheres, boxes, capsules, cylinders, convex hulls, triangle meshes, compounds, and offset-center-of-mass — in one scene.
+sidebar:
+  order: 2
+---
+
+import PhysicsDemo from "../../../components/PhysicsDemo.astro";
+
+jolt-ts builds every Jolt collider from a plain `Shape.*` descriptor. This scene drops one of each dynamic shape onto a **static triangle-mesh** mound, so you can see them all collide.
+
+<PhysicsDemo demo="shapes-gallery" hint="Drag to orbit" />
+
+## The shape builders
+
+```ts
+import { Shape } from "jolt-ts";
+
+Shape.sphere(0.45);
+Shape.box({ halfExtents: [0.4, 0.4, 0.4] });
+Shape.capsule({ halfHeight: 0.4, radius: 0.3 });
+Shape.cylinder({ halfHeight: 0.4, radius: 0.4 });
+
+// A convex hull is computed from a point cloud.
+Shape.convexHull({ points: [[0, 0.6, 0], [0.5, 0.1, 0.3] /* … */] });
+
+// A triangle mesh — for static geometry like terrain.
+Shape.mesh({ vertices, indices });
+
+// A compound glues child shapes into one rigid body.
+Shape.compound([
+  { shape: Shape.box({ halfExtents: [0.5, 0.06, 0.4] }) },
+  { shape: Shape.box({ halfExtents: [0.08, 0.3, 0.08] }), position: [0.4, -0.3, 0.3] },
+  // …legs…
+]);
+
+// Offset the center of mass — a bottom-heavy "weeble" that self-rights.
+Shape.offsetCenterOfMass(Shape.capsule({ halfHeight: 0.45, radius: 0.4 }), [0, -0.45, 0]);
+```
+
+Every builder returns a plain descriptor object, so you can store, serialize, or generate them. Pass one straight to `world.createBody({ shape })`, or reuse it via [`world.shapes.create()`](/jolt-ts/reference/shape/#shapestore).
+
+:::note[Meshes are static]
+Triangle-mesh shapes are concave and used for **static** colliders (floors, terrain, level geometry). For a moving concave object, use a `convexHull` or a `compound` of convex pieces.
+:::
+
+## Related
+
+- [Shapes guide](/jolt-ts/guides/shapes/) — full reference for every descriptor.
+- [Falling shapes](/jolt-ts/examples/falling-shapes/) — the primitives in motion.

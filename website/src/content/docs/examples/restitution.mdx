@@ -1,0 +1,43 @@
+---
+title: Restitution (bouncing)
+description: Six balls dropped from the same height with increasing restitution, bouncing back to different heights.
+sidebar:
+  order: 3
+---
+
+import PhysicsDemo from "../../../components/PhysicsDemo.astro";
+
+Restitution is how much energy a collision returns — `0` is a dead thud, `1` is a perfect bounce. These six balls are identical except for their restitution, so they bounce back to a staircase of heights. They're lifted back to the top on a timer.
+
+<PhysicsDemo demo="restitution" hint="Drag to orbit" caption="Left to right: restitution 0.0 → 1.0." />
+
+## How it works
+
+```ts
+for (let i = 0; i < 6; i++) {
+  const restitution = i / 5; // 0.0, 0.2, 0.4, … 1.0
+  world.createBody({
+    type: "dynamic",
+    shape: Shape.sphere(0.5),
+    position: [x, 6, 0],
+    layer: "moving",
+    restitution,
+    linearDamping: 0, // let bounce height depend only on restitution
+  });
+}
+```
+
+The floor is created with `restitution: 1` so the ball's own restitution dominates the bounce. When two bodies touch, Jolt combines their restitutions.
+
+To restart the loop, each ball is teleported home and its velocity cleared:
+
+```ts
+body.setTransform([x, 6, 0], [0, 0, 0, 1]);
+body.setLinearVelocity(0, 0, 0);
+body.setAngularVelocity(0, 0, 0);
+body.wakeUp();
+```
+
+## Related
+
+- [Bodies & motion](/jolt-ts/guides/bodies/) — friction, damping, and other material properties.

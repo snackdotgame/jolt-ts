@@ -1,0 +1,94 @@
+---
+title: jolt-ts
+description: TypeScript-first ergonomic bindings for Jolt Physics WASM — a semantic World/Body/Shape API, deterministic stepping, and networking-ready snapshots.
+template: splash
+hero:
+  tagline: The power of Jolt Physics, with an API that feels like TypeScript. Semantic handles, plain-JS vectors, and no manual <code>destroy()</code> in sight.
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Get started
+      link: /jolt-ts/guides/getting-started/
+      icon: right-arrow
+    - text: Browse examples
+      link: /jolt-ts/examples/falling-shapes/
+      variant: secondary
+    - text: GitHub
+      link: https://github.com/snackdotgame/jolt-ts
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
+import PhysicsDemo from "../../components/PhysicsDemo.astro";
+
+<PhysicsDemo
+  demo="falling-shapes"
+  height={480}
+  hint="Drag to orbit · scroll to zoom"
+  caption="A live jolt-ts world running in your browser — rendered with three.js, no build step required."
+/>
+
+## Why jolt-ts?
+
+[Jolt Physics](https://github.com/jrouwe/JoltPhysics) is a fast, modern, deterministic rigid-body engine, and [`JoltPhysics.js`](https://github.com/jrouwe/JoltPhysics.js) exposes almost all of it to the web. But that binding also leaks C++ rules into JavaScript: manual `destroy()`, `AddRef()`/`Release()`, and mutable WASM `Vec3` objects everywhere.
+
+**jolt-ts** wraps that raw layer in an ergonomic, TypeScript-first API — while keeping the full engine one `.raw` away.
+
+<CardGrid>
+  <Card title="Semantic, disposable ownership" icon="approve-check">
+    `world.dispose()` releases the whole world. No hand-written `Jolt.destroy()`, `AddRef()`, or `Release()` on the common path.
+  </Card>
+  <Card title="Plain JS in, plain JS out" icon="setting">
+    Pass `[x, y, z]`, typed arrays, or `{ x, y, z }`. Read back plain objects — or into caller-owned buffers for hot loops.
+  </Card>
+  <Card title="Owns its WASM build" icon="rocket">
+    Ships every Jolt build variant, compiled with cross-platform determinism on. The default `wasm-compat` build embeds the WASM — no asset plumbing.
+  </Card>
+  <Card title="Networking-ready" icon="random">
+    Binary scene snapshots plus `saveState()`/`restoreState()` for rollback ring buffers and deterministic lockstep.
+  </Card>
+</CardGrid>
+
+## Install
+
+```sh
+pnpm add jolt-ts
+```
+
+```ts
+import { World, Body, Shape } from "jolt-ts";
+
+const world = await World.create({ gravity: [0, -9.81, 0] });
+
+world.createBody({
+  type: "static",
+  shape: Shape.box({ halfExtents: [50, 0.5, 50] }),
+  position: [0, -0.5, 0],
+  layer: "static",
+});
+
+const ball = world.createBody(
+  Body.dynamic().shape(Shape.sphere(0.5)).translation(0, 8, 0).layer("moving"),
+);
+
+world.step(1 / 60);
+ball.translation(); // { x, y, z }
+```
+
+## Explore
+
+<CardGrid>
+  <LinkCard title="Getting started" href="/jolt-ts/guides/getting-started/" description="Install, create a world, add a body, and render it with three.js." />
+  <LinkCard title="Examples" href="/jolt-ts/examples/falling-shapes/" description="A dozen runnable demos: stacking, raycasts, CCD, kinematic platforms, and more." />
+  <LinkCard title="Determinism & networking" href="/jolt-ts/guides/determinism/" description="Snapshots, save/restore state, and building a rollback loop." />
+  <LinkCard title="API reference" href="/jolt-ts/reference/world/" description="Every class and method in the public surface." />
+</CardGrid>
+
+## Ecosystem
+
+<LinkCard
+  title="Character & vehicle controllers →"
+  href="/jolt-ts/guides/character-controller/"
+  description="jolt-ts-character-controller — imperative, Ecctrl-style character and vehicle controllers built on jolt-ts: floating capsule, jump / move / turn, wheeled vehicles, and animation state decoupled from physics."
+/>

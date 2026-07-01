@@ -1,0 +1,50 @@
+---
+title: Raycasting
+description: A sweeping ray that reports the hit body, contact point, and surface normal — the data behind bullets, line-of-sight, and mouse picking.
+sidebar:
+  order: 5
+---
+
+import PhysicsDemo from "../../../components/PhysicsDemo.astro";
+
+A raycast shoots a line into the world and reports the first thing it hits. This ray sweeps in a circle; the yellow dot marks the contact point and the pink arrow is the surface normal jolt-ts returns.
+
+<PhysicsDemo demo="raycast" hint="Drag to orbit" caption="Cyan: the ray. Yellow: the hit point. Pink: the surface normal." />
+
+## How it works
+
+```ts
+// `direction` carries the ray length: the ray goes from origin to origin + direction.
+const hit = world.castRay([0, 5.5, 0], [dx, dy, dz]);
+
+if (hit) {
+  hit.body;      // the Body that was hit (undefined for foreign raw bodies)
+  hit.point;     // { x, y, z } contact point in world space
+  hit.normal;    // { x, y, z } surface normal, facing back toward the ray
+  hit.fraction;  // 0…1 along the ray
+}
+```
+
+Need every hit, not just the closest? Use `castRayAll`, which returns hits sorted near to far:
+
+```ts
+const hits = world.castRayAll(origin, direction);
+```
+
+### Filtering
+
+Both take `QueryOptions` to exclude a body, include sensors, or run a custom predicate:
+
+```ts
+world.castRay(origin, direction, {
+  excludeBody: player,
+  includeSensors: false,
+  filter: ({ body }) => (body?.userData as { team?: string })?.team !== "friendly",
+});
+```
+
+The same `castRay` powers mouse picking — unproject the cursor to a world ray and cast it. The [Forces](/jolt-ts/examples/forces/) demo does exactly that.
+
+## Related
+
+- [Queries guide](/jolt-ts/guides/queries/) · [Shape casting](/jolt-ts/examples/shapecast/)
