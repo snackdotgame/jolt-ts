@@ -150,3 +150,8 @@ There is no per-body or per-shape bookkeeping to remember: `world.dispose()` cle
 - [Shapes](/jolt-ts/guides/shapes/) — spheres, boxes, capsules, hulls, meshes, and compounds.
 - [Queries](/jolt-ts/guides/queries/) — raycasts and shape casts.
 - [Determinism & networking](/jolt-ts/guides/determinism/) — snapshots and rollback.
+- [Character & vehicle controllers](/jolt-ts/guides/character-controller/) — drop-in movement with the `jolt-ts-character-controller` companion.
+
+:::tip[Building a game character?]
+Don't hand-roll capsule movement. The **[jolt-ts-character-controller](https://github.com/snackdotgame/jolt-ts-character-controller)** companion gives you an imperative, Ecctrl-style character (and vehicle) controller on top of jolt-ts — floating capsule, jump, slopes, platforms, and animation state. See the [guide](/jolt-ts/guides/character-controller/).
+:::

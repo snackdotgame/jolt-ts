@@ -73,6 +73,7 @@ export default defineConfig({
           items: [
             { label: "Shapes", slug: "guides/shapes" },
             { label: "Bodies & motion", slug: "guides/bodies" },
+            { label: "Character & vehicle controllers", slug: "guides/character-controller", badge: "Companion" },
             { label: "Collision layers", slug: "guides/layers" },
             { label: "Queries", slug: "guides/queries" },
             { label: "Debug rendering", slug: "guides/debug-rendering" },

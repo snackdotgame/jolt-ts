@@ -58,7 +58,7 @@ world.withRawBody(body, (rawBody) => {
 ## Examples of what lives here (for now)
 
 - **Constraints / joints** — build them from `world.raw` and the raw shapes/bodies.
-- **Character & vehicle controllers** — Jolt's `CharacterVirtual` via the raw module, or skip the boilerplate with [**jolt-ts-character-controller**](https://github.com/snackdotgame/jolt-ts-character-controller): ready-made imperative, Ecctrl-style character and vehicle controllers built on jolt-ts.
+- **Character & vehicle controllers** — Jolt's `CharacterVirtual` via the raw module, or skip the boilerplate entirely with **[jolt-ts-character-controller](/jolt-ts/guides/character-controller/)**: ready-made imperative, Ecctrl-style character and vehicle controllers built on jolt-ts.
 - **Contact events** — attach a `ContactListenerJS` to `world.raw.system`; keep it alive for the world's lifetime.
 - **Ragdolls, soft bodies** — all present in `world.raw.module`.
 

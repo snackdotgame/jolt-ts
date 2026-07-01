@@ -11,6 +11,10 @@ A character capsule should slide and fall, but never tip over. You get that by r
 
 <PhysicsDemo demo="locked-rotations" hint="Drag to orbit" caption="Orange: free to rotate (topples). Green: rotations locked (stays upright)." />
 
+:::tip[Want a real character controller?]
+An upright capsule is only the start — a game character also needs hover, ground/slope detection, jumping, and moving-platform support. **[jolt-ts-character-controller](https://github.com/snackdotgame/jolt-ts-character-controller)** provides all of it on top of jolt-ts. See the [Character & vehicle controllers guide](/jolt-ts/guides/character-controller/).
+:::
+
 ## How it works
 
 The fluent builder has a `lockRotations()` shortcut:

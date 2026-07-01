@@ -153,6 +153,10 @@ world.createBody({
 
 The six values are `translation-x/y/z` and `rotation-x/y/z`.
 
+:::tip[Character controllers]
+Locking rotations is just the first step toward a playable character. For a full imperative character (and vehicle) controller — hover, slopes, jumping, moving platforms, animation state — use the **[jolt-ts-character-controller](/jolt-ts/guides/character-controller/)** companion.
+:::
+
 ## Sleeping
 
 Resting dynamic bodies go to **sleep** to save CPU and wake on contact. Control it:
