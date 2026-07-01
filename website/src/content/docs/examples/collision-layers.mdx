@@ -1,0 +1,40 @@
+---
+title: Collision layers
+description: Two teams of bodies that pass through their own color but collide with the other — configured with a layer table.
+sidebar:
+  order: 4
+---
+
+import PhysicsDemo from "../../../components/PhysicsDemo.astro";
+
+Collision layers control **what collides with what**. Here red boxes and blue spheres rain down together: each color passes straight through its own kind but bumps the other, so the two streams interleave and shove.
+
+<PhysicsDemo demo="collision-layers" hint="Drag to orbit" />
+
+## The layer table
+
+Define layers when you create the world. Each layer lists which layers it `collidesWith`:
+
+```ts
+const world = await World.create({
+  layers: {
+    ground: { collidesWith: ["red", "blue"] },
+    red: { collidesWith: ["ground", "blue"] }, // not "red" → red passes through red
+    blue: { collidesWith: ["ground", "red"] }, // not "blue" → blue passes through blue
+  },
+});
+```
+
+Then assign each body to a layer by name:
+
+```ts
+world.createBody({ type: "dynamic", shape: Shape.box({ halfExtents: [0.4, 0.4, 0.4] }), layer: "red" });
+world.createBody({ type: "dynamic", shape: Shape.sphere(0.45), layer: "blue" });
+```
+
+If you omit `layers`, jolt-ts uses a sensible default table with `static` and `moving`. See the [Collision layers guide](/jolt-ts/guides/layers/) for broad-phase layers and numeric layer ids.
+
+## Related
+
+- [Collision layers guide](/jolt-ts/guides/layers/) — broad phase, `collidesWith: "all"`, and query filtering.
+- [Sensors](/jolt-ts/examples/sensors/) — detect overlaps without a collision response.

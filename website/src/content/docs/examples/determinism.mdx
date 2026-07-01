@@ -1,0 +1,43 @@
+---
+title: Determinism & rewind
+description: Snapshot simulation state, run forward, and restore — an identical deterministic replay on every loop.
+sidebar:
+  order: 13
+---
+
+import PhysicsDemo from "../../../components/PhysicsDemo.astro";
+
+jolt-ts ships Jolt compiled for **cross-platform determinism**: given the same starting state and inputs, every machine computes the same result, bit for bit. This demo makes that visible — it snapshots the world, runs for a few seconds, restores the snapshot, and repeats. Every replay retraces the exact same path.
+
+<PhysicsDemo demo="determinism" hint="Drag to orbit" caption="The shapes snap back and replay identically each loop — the property rollback netcode is built on." />
+
+## How it works
+
+```ts
+const world = await World.create({ deterministic: "cross-platform", gravity: [0, -9.81, 0] });
+// …spawn bodies…
+
+// Serialize the whole simulation state to bytes.
+const snapshot = world.saveState(); // Uint8Array
+
+function tick(frame) {
+  if (frame > 0 && frame % 260 === 0) {
+    world.restoreState(snapshot); // jump back to the start
+  }
+  world.step(1 / 60);
+}
+```
+
+`saveState()` captures positions, velocities, active state, and contacts. `restoreState()` puts them all back. Because stepping is deterministic, the replay is identical.
+
+### From replay to netcode
+
+This is the core of a rollback loop:
+
+- Keep a ring buffer of `saveState()` bytes, one per frame.
+- When a late input arrives for frame *N*, `restoreState()` that frame and re-step to the present with the corrected input.
+- `saveState`/`restoreState` only move **simulation state** for bodies that already exist — they never add or remove bodies. Replicate each body spawn/despawn as its own event, applied in the same order on every peer so ids stay in lockstep. See the [networking guide](/jolt-ts/guides/determinism/#what-state-actually-syncs).
+
+## Related
+
+- [Determinism & networking guide](/jolt-ts/guides/determinism/) — snapshots, recorders, and rollback in depth.

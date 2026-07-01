@@ -30,7 +30,10 @@
     "check:native": "node scripts/check-native-artifacts.mjs",
     "prepack": "pnpm run build && pnpm run patch:native && pnpm run check:native",
     "test": "vitest run",
-    "patch:native": "node scripts/patch-bundler-compat.mjs"
+    "patch:native": "node scripts/patch-bundler-compat.mjs",
+    "docs:dev": "pnpm run build && pnpm --filter jolt-ts-docs dev",
+    "docs:build": "pnpm run build && pnpm --filter jolt-ts-docs build",
+    "docs:preview": "pnpm --filter jolt-ts-docs preview"
   },
   "keywords": [
     "jolt",

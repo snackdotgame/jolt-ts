@@ -1,0 +1,37 @@
+---
+title: Shape casting
+description: Sweeping a sphere downward to find the ground — the swept-volume version of a raycast, as used by character controllers.
+sidebar:
+  order: 6
+---
+
+import PhysicsDemo from "../../../components/PhysicsDemo.astro";
+
+A shape cast sweeps an entire shape along a direction and reports the first contact. It's the swept-volume cousin of a raycast — perfect for probing the ground under a character's feet, testing whether a body fits, or fat rays that won't slip through cracks.
+
+<PhysicsDemo demo="shapecast" hint="Drag to orbit" caption="A sphere is cast straight down from the moving wireframe origin; the solid sphere shows where it first touches." />
+
+## How it works
+
+```ts
+// castShape(shape, startPosition, startRotation, sweepDirection, options?)
+const hit = world.castShape(
+  Shape.sphere(0.4),
+  [x, 4.5, 0],   // where the sweep starts
+  undefined,     // start rotation (identity)
+  [0, -6, 0],    // sweep direction + length: 6 units straight down
+);
+
+if (hit) {
+  const landingY = 4.5 + -6 * hit.fraction; // start.y + direction.y * fraction
+  hit.point;               // contact point on the surface
+  hit.normal;              // surface normal
+  hit.penetrationDepth;    // overlap if the shape started intersecting
+}
+```
+
+`castShape` returns a `ShapeCastHit` with the same `body`/`fraction`/`point`/`normal` as a raycast, plus `contactPointOnCaster`, `contactPointOnBody`, and `penetrationDepth` for richer contact resolution.
+
+## Related
+
+- [Raycasting](/jolt-ts/examples/raycast/) · [Queries guide](/jolt-ts/guides/queries/)

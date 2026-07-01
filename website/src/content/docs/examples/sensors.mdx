@@ -1,0 +1,43 @@
+---
+title: Sensors (triggers)
+description: A sensor slab that bodies fall through, next to a solid slab that stops them — the difference is one flag.
+sidebar:
+  order: 9
+---
+
+import PhysicsDemo from "../../../components/PhysicsDemo.astro";
+
+A **sensor** (a.k.a. trigger) detects overlaps but never pushes anything — perfect for pickups, checkpoints, and trigger volumes. On the left, shapes fall straight through a yellow sensor slab; on the right, an identical **solid** slab stops them. The only difference is `sensor: true`.
+
+<PhysicsDemo demo="sensors" hint="Drag to orbit" caption="Left: sensor (pass-through). Right: solid." />
+
+## How it works
+
+```ts
+// Sensor: registers overlaps, applies no collision response.
+world.createBody({
+  type: "static",
+  shape: Shape.box({ halfExtents: [1.8, 0.2, 1.8] }),
+  position: [-2.6, 2, 0],
+  layer: "moving",
+  sensor: true,
+});
+
+// Solid: the same body without the flag.
+world.createBody({
+  type: "static",
+  shape: Shape.box({ halfExtents: [1.8, 0.2, 1.8] }),
+  position: [2.6, 2, 0],
+  layer: "static",
+});
+```
+
+You can also flip a body at runtime — read `body.isSensor()`, and note that queries skip sensors unless you pass `includeSensors: true`.
+
+:::note[Reading overlaps]
+This demo shows the *behavior* of a sensor. Reacting to specific enter/exit events uses Jolt's contact listener, which is available today through the [raw escape hatch](/jolt-ts/guides/raw-access/) (`world.raw.system`) while a first-class events API is in progress.
+:::
+
+## Related
+
+- [Collision layers](/jolt-ts/examples/collision-layers/) · [Queries guide](/jolt-ts/guides/queries/)

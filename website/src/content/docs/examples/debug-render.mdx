@@ -1,0 +1,44 @@
+---
+title: Debug rendering
+description: Draw every collider as a wireframe straight from world.debugRender() — no solid meshes involved.
+sidebar:
+  order: 12
+---
+
+import PhysicsDemo from "../../../components/PhysicsDemo.astro";
+
+Every other demo on this site renders solid meshes it manages itself. This one renders **nothing but the physics** — `world.debugRender()` returns flat line buffers for every collider, colored by body state, and we feed them straight into a three.js `LineSegments`.
+
+<PhysicsDemo demo="debug-render" hint="Drag to orbit" caption="Green: active dynamic. Grey: static. Colors follow Jolt's debug conventions." />
+
+## How it works
+
+`debugRender()` returns two typed arrays: `vertices` (line endpoints, 2 per segment) and `colors` (one RGBA per vertex).
+
+```ts
+const buffers = world.debugRender();
+buffers.vertices; // Float32Array — [ax,ay,az, bx,by,bz, …]
+buffers.colors;   // Float32Array — [r,g,b,a, …] per vertex
+```
+
+Upload them to a line renderer each frame. With three.js:
+
+```ts
+const geometry = new THREE.BufferGeometry();
+const lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ vertexColors: true }));
+
+function frame() {
+  world.step(1 / 60);
+  const { vertices, colors } = world.debugRender();
+  geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
+  geometry.setAttribute("color", toRGB(colors)); // drop alpha for LineBasicMaterial
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+```
+
+Convex primitives draw as clean wireframes; meshes, hulls, and compounds fall back to their triangle edges via Jolt's own `ShapeGetTriangles`. Customize the per-category colors and ring tessellation with `debugRender({ colors, ringSegments })`.
+
+## Related
+
+- [Debug rendering guide](/jolt-ts/guides/debug-rendering/) — color options and Babylon/raw usage.

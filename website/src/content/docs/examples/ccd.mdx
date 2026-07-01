@@ -1,0 +1,32 @@
+---
+title: Continuous collision (CCD)
+description: A fast projectile tunnels through a thin wall with discrete collision, but linear-cast motion quality catches it.
+sidebar:
+  order: 7
+---
+
+import PhysicsDemo from "../../../components/PhysicsDemo.astro";
+
+A body moving fast enough can skip right over a thin obstacle in a single step — it's on one side before the step, the other side after, and never overlaps. That's **tunneling**. Continuous collision detection (CCD) fixes it by sweeping the body's motion.
+
+Both spheres below are fired at the same speed. The red one uses the default `discrete` motion quality and punches through the wall; the green one uses `linearCast` and is stopped.
+
+<PhysicsDemo demo="ccd" hint="Drag to orbit" caption="Red: discrete (tunnels). Green: linearCast (stops at the wall)." />
+
+## How it works
+
+Set `motionQuality` per body:
+
+```ts
+// Default: fast + cheap, but can tunnel through thin geometry.
+world.createBody({ type: "dynamic", shape: Shape.sphere(0.22), motionQuality: "discrete" });
+
+// Sweeps the motion so thin walls are never skipped.
+world.createBody({ type: "dynamic", shape: Shape.sphere(0.22), motionQuality: "linearCast" });
+```
+
+CCD costs more, so reserve `linearCast` for things that actually move fast — projectiles, fast vehicles — and leave everything else on `discrete`.
+
+## Related
+
+- [Bodies & motion](/jolt-ts/guides/bodies/) — the full list of body options.

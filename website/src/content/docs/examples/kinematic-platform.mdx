@@ -1,0 +1,39 @@
+---
+title: Kinematic platform
+description: A moving platform driven with moveKinematic that carries its cargo and shoves dynamic bodies out of the way.
+sidebar:
+  order: 8
+---
+
+import PhysicsDemo from "../../../components/PhysicsDemo.astro";
+
+Kinematic bodies are moved by you, not by forces — but they still push dynamic bodies correctly. The trick is `moveKinematic`, which sets a velocity so the body *arrives* at the target next step, rather than teleporting. That carried velocity is what lets a platform ferry its cargo and bulldoze loose boxes.
+
+<PhysicsDemo demo="kinematic-platform" hint="Drag to orbit" />
+
+## How it works
+
+```ts
+const platform = world.createBody({
+  type: "kinematic",
+  shape: Shape.box({ halfExtents: [1.4, 0.15, 1.4] }),
+  position: [-3, 0.5, 0],
+  layer: "moving",
+});
+
+let time = 0;
+function tick(dt) {
+  time += dt;
+  const x = Math.sin(time * 0.7) * 3; // where the platform should be next
+  platform.moveKinematic([x, 0.5, 0], [0, 0, 0, 1], dt);
+  world.step(dt);
+}
+```
+
+:::caution[moveKinematic vs setTransform]
+`setTransform` **teleports** — a resting box would be left behind and dynamic bodies wouldn't be pushed. `moveKinematic` derives the velocity from the move, so contacts resolve properly. Use it for anything that should carry or shove other bodies.
+:::
+
+## Related
+
+- [Bodies & motion](/jolt-ts/guides/bodies/) — static, kinematic, and dynamic bodies.

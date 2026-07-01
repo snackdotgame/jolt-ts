@@ -1,0 +1,41 @@
+---
+title: Locked rotations
+description: A character capsule that stays upright by locking its rotational degrees of freedom.
+sidebar:
+  order: 10
+---
+
+import PhysicsDemo from "../../../components/PhysicsDemo.astro";
+
+A character capsule should slide and fall, but never tip over. You get that by restricting the body's **degrees of freedom** to translation only. Both capsules below take the same off-center shove: the orange one rotates freely and topples, the green one has its rotations locked and just slides.
+
+<PhysicsDemo demo="locked-rotations" hint="Drag to orbit" caption="Orange: free to rotate (topples). Green: rotations locked (stays upright)." />
+
+## How it works
+
+The fluent builder has a `lockRotations()` shortcut:
+
+```ts
+const character = world.createBody(
+  Body.dynamic()
+    .shape(Shape.capsule({ halfHeight: 0.5, radius: 0.35 }))
+    .translation(0, 0.85, 0)
+    .layer("moving")
+    .lockRotations(), // translation only — the capsule can't tip
+);
+```
+
+`lockRotations()` is shorthand for allowing just the three translation axes. You can pick any subset explicitly:
+
+```ts
+world.createBody({
+  type: "dynamic",
+  shape: Shape.capsule({ halfHeight: 0.5, radius: 0.35 }),
+  allowedDofs: ["translation-x", "translation-y", "translation-z"],
+});
+```
+
+## Related
+
+- [Bodies & motion](/jolt-ts/guides/bodies/#allowed-degrees-of-freedom) — the full `allowedDofs` list.
+- [jolt-ts-character-controller](https://github.com/snackdotgame/jolt-ts-character-controller) — a ready-made imperative character (and vehicle) controller built on jolt-ts, if you want more than an upright capsule.

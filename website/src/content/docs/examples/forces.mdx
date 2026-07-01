@@ -1,0 +1,41 @@
+---
+title: Forces & interaction
+description: Click a shape to launch it — ray-pick the body under the cursor and apply an impulse at the contact point.
+sidebar:
+  order: 11
+---
+
+import PhysicsDemo from "../../../components/PhysicsDemo.astro";
+
+This one is interactive: **click any shape to launch it.** Under the hood it ray-picks the body under your cursor and applies an impulse at the exact contact point, so an off-center hit adds spin. Drag empty space to orbit the camera.
+
+<PhysicsDemo demo="forces" hint="Click a shape to launch it · drag to orbit" height={460} />
+
+## How it works
+
+Picking uses the same `castRay` from the [raycast example](/jolt-ts/examples/raycast/): unproject the cursor to a world-space ray, cast it, and apply an impulse to whatever it hits.
+
+```ts
+canvas.addEventListener("pointerdown", (event) => {
+  const ray = cursorToWorldRay(event, camera); // { origin, direction }
+  const hit = world.castRay(ray.origin, ray.direction);
+  if (!hit?.body) return;
+
+  // Impulse = instantaneous change in momentum. Applying it at hit.point
+  // (off-center) also imparts spin.
+  hit.body.applyImpulse([0, hit.body.mass() * 8, 0], [hit.point.x, hit.point.y, hit.point.z]);
+});
+```
+
+### Ways to move a body
+
+| Method | Use it for |
+| --- | --- |
+| `applyImpulse(v, point?)` | An instant kick — jumps, hits, explosions. |
+| `addForce(v, opts?, point?)` | A continuous push, applied until the next step (thrusters, wind). |
+| `addTorque(v)` / `applyAngularImpulse(v)` | Rotational push. |
+| `setLinearVelocity(x, y, z)` | Set velocity directly. |
+
+## Related
+
+- [Bodies & motion](/jolt-ts/guides/bodies/#forces-and-impulses) · [Raycasting](/jolt-ts/examples/raycast/)
