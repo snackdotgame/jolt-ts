@@ -7,9 +7,9 @@ sidebar:
 
 import PhysicsDemo from "../../../components/PhysicsDemo.astro";
 
-Collision layers control **what collides with what**. Here red boxes and blue spheres rain down together: each color passes straight through its own kind but bumps the other, so the two streams interleave and shove.
+Collision layers control **what collides with what**. Here red boxes and blue spheres rain into a shared bin and bounce: each color passes straight through its **own** kind but collides with the **other**, so you'll see reds piling on and bouncing off blues (and vice-versa) while each color ghosts through itself.
 
-<PhysicsDemo demo="collision-layers" hint="Drag to orbit" />
+<PhysicsDemo demo="collision-layers" hint="Drag to orbit" caption="Red ↔ blue collide and bounce; red ↔ red and blue ↔ blue pass through." />
 
 ## The layer table
 
