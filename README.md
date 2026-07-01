@@ -2,6 +2,8 @@
 
 TypeScript-first ergonomic bindings for Jolt Physics WASM.
 
+**📖 Documentation & live examples: <https://snackdotgame.github.io/jolt-ts/>**
+
 The package owns its raw WASM build instead of depending on the published
 `jolt-physics` npm package. The vendored binding layer lives in `native/jolt`
 and fetches Jolt C++ directly during `pnpm run build:native`.
