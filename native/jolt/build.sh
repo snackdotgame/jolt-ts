@@ -77,6 +77,13 @@ python3 ./replace_text.py \
 	"jolt-physics.debug.multithread.wasm-compat.js" \
 	./dist/jolt-physics.debug.multithread.wasm-compat.js
 
+# Every build variant shares this declaration file. Generate it from the full
+# release + debug IDL after the final CMake build so the last variant cannot
+# accidentally drop debug-renderer declarations.
+cat ./JoltJS.idl ./JoltJS-DebugRenderer.idl > ./Build/jolt-types.idl
+pnpm exec webidl-dts-gen -e -d -i ./Build/jolt-types.idl -o ./dist/types.d.ts -n Jolt
+rm -f ./Build/jolt-types.idl
+
 cat > ./dist/jolt-physics.d.ts << EOF
 import Jolt from "./types";
 
