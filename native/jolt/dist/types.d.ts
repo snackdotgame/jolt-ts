@@ -153,9 +153,11 @@ declare namespace Jolt {
     function _emscripten_enum_EConstraintSpace_EConstraintSpace_WorldSpace(): EConstraintSpace;
     const ESpringMode_FrequencyAndDamping: number;
     const ESpringMode_StiffnessAndDamping: number;
-    type ESpringMode = typeof ESpringMode_FrequencyAndDamping | typeof ESpringMode_StiffnessAndDamping;
+    const ESpringMode_MassNormalizedStiffnessAndDamping: number;
+    type ESpringMode = typeof ESpringMode_FrequencyAndDamping | typeof ESpringMode_StiffnessAndDamping | typeof ESpringMode_MassNormalizedStiffnessAndDamping;
     function _emscripten_enum_ESpringMode_ESpringMode_FrequencyAndDamping(): ESpringMode;
     function _emscripten_enum_ESpringMode_ESpringMode_StiffnessAndDamping(): ESpringMode;
+    function _emscripten_enum_ESpringMode_ESpringMode_MassNormalizedStiffnessAndDamping(): ESpringMode;
     const EOverrideMassProperties_CalculateMassAndInertia: number;
     const EOverrideMassProperties_CalculateInertia: number;
     const EOverrideMassProperties_MassAndInertiaProvided: number;
@@ -279,10 +281,12 @@ declare namespace Jolt {
     const EMotorState_Off: number;
     const EMotorState_Velocity: number;
     const EMotorState_Position: number;
-    type EMotorState = typeof EMotorState_Off | typeof EMotorState_Velocity | typeof EMotorState_Position;
+    const EMotorState_PositionAndVelocity: number;
+    type EMotorState = typeof EMotorState_Off | typeof EMotorState_Velocity | typeof EMotorState_Position | typeof EMotorState_PositionAndVelocity;
     function _emscripten_enum_EMotorState_EMotorState_Off(): EMotorState;
     function _emscripten_enum_EMotorState_EMotorState_Velocity(): EMotorState;
     function _emscripten_enum_EMotorState_EMotorState_Position(): EMotorState;
+    function _emscripten_enum_EMotorState_EMotorState_PositionAndVelocity(): EMotorState;
     const ETransmissionMode_Auto: number;
     const ETransmissionMode_Manual: number;
     type ETransmissionMode = typeof ETransmissionMode_Auto | typeof ETransmissionMode_Manual;
@@ -520,6 +524,7 @@ declare namespace Jolt {
         sZero(): Quat;
         sIdentity(): Quat;
         sRotation(inRotation: Vec3, inAngle: number): Quat;
+        GetAngularVelocity(inDeltaTime: number): Vec3;
         sFromTo(inFrom: Vec3, inTo: Vec3): Quat;
         Equals(inQ: Quat): boolean;
         NotEquals(inQ: Quat): boolean;
@@ -2037,7 +2042,9 @@ declare namespace Jolt {
         GetWorldSpaceBounds(): AABox;
         GetTransformedShape(): TransformedShape;
         GetBodyCreationSettings(): BodyCreationSettings;
+        ApplyBodyCreationSettings(inBodyCreationSettings: BodyCreationSettings, inBPLInterface: BroadPhaseLayerInterface): void;
         GetSoftBodyCreationSettings(): SoftBodyCreationSettings;
+        ApplySoftBodyCreationSettings(inSoftBodyCreationSettings: SoftBodyCreationSettings, inBPLInterface: BroadPhaseLayerInterface): void;
         GetMotionProperties(): MotionProperties;
         GetWorldSpaceSurfaceNormal(inSubShapeID: SubShapeID, inPosition: RVec3): Vec3;
         GetUserData(): number;
@@ -2249,6 +2256,9 @@ declare namespace Jolt {
         get_mContactPointPreserveLambdaMaxDistSq(): number;
         set_mContactPointPreserveLambdaMaxDistSq(mContactPointPreserveLambdaMaxDistSq: number): void;
         mContactPointPreserveLambdaMaxDistSq: number;
+        get_mInternalEdgeRemovalVertexToleranceSq(): number;
+        set_mInternalEdgeRemovalVertexToleranceSq(mInternalEdgeRemovalVertexToleranceSq: number): void;
+        mInternalEdgeRemovalVertexToleranceSq: number;
         get_mNumVelocitySteps(): number;
         set_mNumVelocitySteps(mNumVelocitySteps: number): void;
         mNumVelocitySteps: number;
@@ -2641,6 +2651,9 @@ declare namespace Jolt {
         get_mBackFaceMode(): EBackFaceMode;
         set_mBackFaceMode(mBackFaceMode: EBackFaceMode): void;
         mBackFaceMode: EBackFaceMode;
+        get_mInternalEdgeRemovalVertexToleranceSq(): number;
+        set_mInternalEdgeRemovalVertexToleranceSq(mInternalEdgeRemovalVertexToleranceSq: number): void;
+        mInternalEdgeRemovalVertexToleranceSq: number;
     }
     class CollideShapeCollector {
         Reset(): void;
@@ -2693,6 +2706,9 @@ declare namespace Jolt {
     }
     class ShapeCastSettings extends CollideSettingsBase {
         constructor();
+        get_mExtraConvexRadius(): number;
+        set_mExtraConvexRadius(mExtraConvexRadius: number): void;
+        mExtraConvexRadius: number;
         get_mBackFaceModeTriangles(): EBackFaceMode;
         set_mBackFaceModeTriangles(mBackFaceModeTriangles: EBackFaceMode): void;
         mBackFaceModeTriangles: EBackFaceMode;
@@ -3678,6 +3694,8 @@ declare namespace Jolt {
         GetCosMaxSlopeAngle(): number;
         SetUp(inUp: Vec3): void;
         GetUp(): Vec3;
+        SetSupportingVolume(inVolume: Plane): void;
+        GetSupportingVolume(): Plane;
         GetShape(): Shape;
         GetGroundState(): EGroundState;
         IsSlopeTooSteep(inNormal: Vec3): boolean;
@@ -4383,6 +4401,7 @@ declare namespace Jolt {
         ResetWarmStart(): void;
         DriveToPoseUsingKinematics(inPose: SkeletonPose, inDeltaTime: number, inLockBodies?: boolean): void;
         DriveToPoseUsingMotors(inPose: SkeletonPose): void;
+        DriveToPoseUsingMotors(inPrevPose: SkeletonPose, inPose: SkeletonPose, inDeltaTime: number): void;
         SetLinearAndAngularVelocity(inLinearVelocity: Vec3, inAngularVelocity: Vec3, inLockBodies?: boolean): void;
         SetLinearVelocity(inLinearVelocity: Vec3, inLockBodies?: boolean): void;
         AddLinearVelocity(inLinearVelocity: Vec3, inLockBodies?: boolean): void;
@@ -4475,6 +4494,7 @@ declare namespace Jolt {
         GetPhysicsSystem(): PhysicsSystem;
         GetTempAllocator(): TempAllocator;
         GetObjectLayerPairFilter(): ObjectLayerPairFilter;
+        GetBroadPhaseLayerInterface(): BroadPhaseLayerInterface;
         GetObjectVsBroadPhaseLayerFilter(): ObjectVsBroadPhaseLayerFilter;
         sGetTotalMemory(): number;
         sGetFreeMemory(): number;

@@ -165,7 +165,7 @@ using ArrayRagdollPart = Array<RagdollPart>;
 using ArrayRagdollAdditionalConstraint = Array<RagdollAdditionalConstraint>;
 using CompoundShapeSubShape = CompoundShape::SubShape;
 using BodyInterface_AddState = void;
-using CharacterVirtualContact = CharacterVirtual::Contact;
+using CharacterVirtualContact = CharacterContact;
 using ArrayCharacterVirtualContact = Array<CharacterVirtualContact>;
 
 static constexpr uint32 JoltPhysicsSceneMagic = 0x3153544a; // "JTS1" in little-endian streams.
@@ -228,6 +228,7 @@ constexpr EConstraintSpace EConstraintSpace_WorldSpace = EConstraintSpace::World
 // Alias for ESpringMode values to avoid clashes
 constexpr ESpringMode ESpringMode_FrequencyAndDamping = ESpringMode::FrequencyAndDamping;
 constexpr ESpringMode ESpringMode_StiffnessAndDamping = ESpringMode::StiffnessAndDamping;
+constexpr ESpringMode ESpringMode_MassNormalizedStiffnessAndDamping = ESpringMode::MassNormalizedStiffnessAndDamping;
 
 // Alias for EOverrideMassProperties values to avoid clashes
 constexpr EOverrideMassProperties EOverrideMassProperties_CalculateMassAndInertia = EOverrideMassProperties::CalculateMassAndInertia;
@@ -320,6 +321,7 @@ constexpr SixDOFConstraintSettings_EAxis SixDOFConstraintSettings_EAxis_Rotation
 constexpr EMotorState EMotorState_Off = EMotorState::Off;
 constexpr EMotorState EMotorState_Velocity = EMotorState::Velocity;
 constexpr EMotorState EMotorState_Position = EMotorState::Position;
+constexpr EMotorState EMotorState_PositionAndVelocity = EMotorState::PositionAndVelocity;
 
 // Alias for ETransmissionMode values to avoid clashes
 constexpr ETransmissionMode ETransmissionMode_Auto = ETransmissionMode::Auto;
@@ -492,6 +494,12 @@ public:
 	ObjectLayerPairFilter *GetObjectLayerPairFilter()
 	{
 		return mObjectLayerPairFilter;
+	}
+
+	/// Access the default broadphase layer interface
+	BroadPhaseLayerInterface *GetBroadPhaseLayerInterface()
+	{
+		return mBroadPhaseLayerInterface;
 	}
 
 	/// Access the default object vs broadphase layer filter
@@ -968,6 +976,8 @@ class CharacterContactListenerEm: public CharacterContactListener
 {
 public:
 	// JavaScript compatible virtual functions
+	virtual bool			OnContactValidate(const CharacterVirtual *inCharacter, const BodyID &inBodyID2, const SubShapeID &inSubShapeID2) = 0;
+	virtual bool			OnCharacterContactValidate(const CharacterVirtual *inCharacter, const CharacterVirtual *inOtherCharacter, const SubShapeID &inSubShapeID2) = 0;
 	virtual void			OnContactAdded(const CharacterVirtual *inCharacter, const BodyID &inBodyID2, const SubShapeID &inSubShapeID2, const RVec3 *inContactPosition, const Vec3 *inContactNormal, CharacterContactSettings &ioSettings) = 0;
 	virtual void			OnContactPersisted(const CharacterVirtual *inCharacter, const BodyID &inBodyID2, const SubShapeID &inSubShapeID2, const RVec3 *inContactPosition, const Vec3 *inContactNormal, CharacterContactSettings &ioSettings) = 0;
 	virtual void			OnCharacterContactAdded(const CharacterVirtual *inCharacter, const CharacterVirtual *inOtherCharacter, const SubShapeID &inSubShapeID2, const RVec3 *inContactPosition, const Vec3 *inContactNormal, CharacterContactSettings &ioSettings) = 0;
@@ -976,24 +986,38 @@ public:
 	virtual void			OnCharacterContactSolve(const CharacterVirtual *inCharacter, const CharacterVirtual *inOtherCharacter, const SubShapeID &inSubShapeID2, const RVec3 *inContactPosition, const Vec3 *inContactNormal, const Vec3 *inContactVelocity, const PhysicsMaterial *inContactMaterial, const Vec3 *inCharacterVelocity, Vec3 &ioNewCharacterVelocity) = 0;
 
 	// Functions that call the JavaScript compatible virtual functions
-	virtual void			OnContactAdded(const CharacterVirtual *inCharacter, const BodyID &inBodyID2, const SubShapeID &inSubShapeID2, RVec3Arg inContactPosition, Vec3Arg inContactNormal, CharacterContactSettings &ioSettings) override
-	{ 
-		OnContactAdded(inCharacter, inBodyID2, inSubShapeID2, &inContactPosition, &inContactNormal, ioSettings);
+	virtual bool			OnContactValidate(const CharacterVirtual *inCharacter, const CharacterContact &inContact) override
+	{
+		return OnContactValidate(inCharacter, inContact.mBodyB, inContact.mSubShapeIDB);
 	}
 
-	virtual void			OnContactPersisted(const CharacterVirtual *inCharacter, const BodyID &inBodyID2, const SubShapeID &inSubShapeID2, RVec3Arg inContactPosition, Vec3Arg inContactNormal, CharacterContactSettings &ioSettings) override
-	{ 
-		OnContactPersisted(inCharacter, inBodyID2, inSubShapeID2, &inContactPosition, &inContactNormal, ioSettings);
+	virtual bool			OnCharacterContactValidate(const CharacterVirtual *inCharacter, const CharacterContact &inContact) override
+	{
+		return OnCharacterContactValidate(inCharacter, inContact.mCharacterB, inContact.mSubShapeIDB);
 	}
 
-	virtual void			OnCharacterContactAdded(const CharacterVirtual *inCharacter, const CharacterVirtual *inOtherCharacter, const SubShapeID &inSubShapeID2, RVec3Arg inContactPosition, Vec3Arg inContactNormal, CharacterContactSettings &ioSettings) override
+	virtual void			OnContactAdded(const CharacterVirtual *inCharacter, const CharacterContact &inContact, CharacterContactSettings &ioSettings) override
 	{ 
-		OnCharacterContactAdded(inCharacter, inOtherCharacter, inSubShapeID2, &inContactPosition, &inContactNormal, ioSettings);
+		Vec3 normal = -inContact.mContactNormal;
+		OnContactAdded(inCharacter, inContact.mBodyB, inContact.mSubShapeIDB, &inContact.mPosition, &normal, ioSettings);
 	}
 
-	virtual void			OnCharacterContactPersisted(const CharacterVirtual *inCharacter, const CharacterVirtual *inOtherCharacter, const SubShapeID &inSubShapeID2, RVec3Arg inContactPosition, Vec3Arg inContactNormal, CharacterContactSettings &ioSettings) override
+	virtual void			OnContactPersisted(const CharacterVirtual *inCharacter, const CharacterContact &inContact, CharacterContactSettings &ioSettings) override
 	{ 
-		OnCharacterContactPersisted(inCharacter, inOtherCharacter, inSubShapeID2, &inContactPosition, &inContactNormal, ioSettings);
+		Vec3 normal = -inContact.mContactNormal;
+		OnContactPersisted(inCharacter, inContact.mBodyB, inContact.mSubShapeIDB, &inContact.mPosition, &normal, ioSettings);
+	}
+
+	virtual void			OnCharacterContactAdded(const CharacterVirtual *inCharacter, const CharacterContact &inContact, CharacterContactSettings &ioSettings) override
+	{ 
+		Vec3 normal = -inContact.mContactNormal;
+		OnCharacterContactAdded(inCharacter, inContact.mCharacterB, inContact.mSubShapeIDB, &inContact.mPosition, &normal, ioSettings);
+	}
+
+	virtual void			OnCharacterContactPersisted(const CharacterVirtual *inCharacter, const CharacterContact &inContact, CharacterContactSettings &ioSettings) override
+	{
+		Vec3 normal = -inContact.mContactNormal;
+		OnCharacterContactPersisted(inCharacter, inContact.mCharacterB, inContact.mSubShapeIDB, &inContact.mPosition, &normal, ioSettings);
 	}
 
 	virtual void			OnContactSolve(const CharacterVirtual *inCharacter, const BodyID &inBodyID2, const SubShapeID &inSubShapeID2, RVec3Arg inContactPosition, Vec3Arg inContactNormal, Vec3Arg inContactVelocity, const PhysicsMaterial *inContactMaterial, Vec3Arg inCharacterVelocity, Vec3 &ioNewCharacterVelocity) override
